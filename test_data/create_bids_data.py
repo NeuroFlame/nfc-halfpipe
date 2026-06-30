@@ -1,5 +1,5 @@
 """
-Generate HALFpipe CI-style BIDS test datasets for test_data/siteN/bids/.
+Generate HALFpipe CI-style BIDS test datasets for test_data/siteN/.
 
 Mirrors the approach in HALFpipe/tests/create_mock_bids_dataset.py:
 - BOLD: 1×1×1×1 zeros; NIfTI header binary-patched to declare full-size scan
@@ -91,7 +91,9 @@ def _make_anat(path: Path) -> None:
 
 
 def rebuild_site(site_name: str, n_subjects: int) -> None:
-    bids_dir = HERE / site_name / "bids"
+    # The site directory IS the BIDS root — matching how NeuroFLAME delivers
+    # DATA_DIR to the computation (the directory the user points to in the UI).
+    bids_dir = HERE / site_name
     print(f"Building {bids_dir} ({n_subjects} subjects) ...")
 
     for item in bids_dir.iterdir():

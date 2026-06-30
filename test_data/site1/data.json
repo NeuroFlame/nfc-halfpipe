@@ -1,6 +1,5 @@
 {
-  "_note": "Site 1 — 12 subjects, low motion. Set bids_directory to the site's BIDS root inside the container when run_halfpipe=true. The local path below is for simulator testing only.",
-  "bids_directory": "/Users/admin/Projects/NeuroFLAME Computations/nfc-halfpipe/test_data/site1/bids",
+  "_note": "Site 1 — 12 subjects, low motion. The BIDS root is the data directory provided by the user in the NeuroFLAME UI (DATA_DIR). For simulation it resolves to test_data/site1/.",
   "derivatives_directory": null,
   "mock_derivatives": {
     "_note": "Used when run_halfpipe=false. Parcel labels (parcel_NNN) match integer IDs of the Schaefer 2018 200-parcel 17-network atlas. This mock uses 20 representative parcels spanning visual, somatomotor, attention, control, and default-mode networks.",

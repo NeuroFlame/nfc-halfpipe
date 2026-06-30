@@ -6,12 +6,16 @@ import tempfile
 from pathlib import Path
 
 
-def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str) -> dict:
+def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_directory: str) -> dict:
     """
     Run HALFpipe subject-level analysis and return QC summary.
 
-    When params["run_halfpipe"] is False (or derivatives already exist),
-    skips execution and returns mock/cached values from site_data.
+    bids_directory is the path to the site's BIDS root. In production this
+    comes from the directory the user points to in the NeuroFLAME UI (DATA_DIR);
+    in simulation it is test_data/siteN/.
+
+    When params["run_halfpipe"] is False, skips execution and returns mock
+    values from site_data["mock_derivatives"].
     """
     run_halfpipe = params.get("run_halfpipe", True)
     mock = site_data.get("mock_derivatives", {})
@@ -28,10 +32,6 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str) -> dict
     halfpipe_spec = params.get("halfpipe_spec")
     if halfpipe_spec is None:
         raise ValueError("params must contain 'halfpipe_spec' when run_halfpipe=true")
-
-    bids_directory = site_data.get("bids_directory")
-    if bids_directory is None:
-        raise ValueError("site data must contain 'bids_directory' when run_halfpipe=true")
 
     # Substitute {bids_directory} placeholder in file path patterns so the
     # shared server-side spec can reference each site's local BIDS root.

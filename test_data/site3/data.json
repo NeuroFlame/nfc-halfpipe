@@ -1,6 +1,5 @@
 {
   "_note": "Site 3 — 15 subjects, low motion (high-quality acquisition protocol). Lowest FD in the federation, slightly elevated ReHo/ALFF.",
-  "bids_directory": "/Users/admin/Projects/NeuroFLAME Computations/nfc-halfpipe/test_data/site3/bids",
   "derivatives_directory": null,
   "mock_derivatives": {
     "_note": "Used when run_halfpipe=false. Same 20-parcel Schaefer subset as site1. Values reflect slightly higher ReHo/ALFF due to lower motion at this site.",

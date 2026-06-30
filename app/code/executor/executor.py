@@ -80,10 +80,15 @@ class HALFpipeExecutor(Executor):
         output_dir = get_output_directory_path(fl_ctx)
         halfpipe_workdir = os.path.join(output_dir, "halfpipe_workdir")
 
+        # In production, DATA_DIR is the BIDS root the user selected in the
+        # NeuroFLAME UI. In simulation it resolves to test_data/siteN/.
+        bids_directory = get_data_directory_path(fl_ctx)
+
         halfpipe_result = run_halfpipe_and_get_qc(
             site_data=self._site_data,
             params=self._params,
             workdir=halfpipe_workdir,
+            bids_directory=bids_directory,
         )
         self._halfpipe_result = halfpipe_result
         # Persist so subsequent tasks (run in separate subprocesses by the simulator) can load it.
