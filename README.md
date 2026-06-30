@@ -72,7 +72,7 @@ nfc-halfpipe/
 │       └── config_fed_server.json     # Controller + aggregator wiring
 ├── test_data/
 │   ├── server/parameters.json         # Computation parameters (aggregation_types, halfpipe_spec, …)
-│   ├── site1/data.json                # Site 1: bids_directory + mock_derivatives
+│   ├── site1/data.json                # Site 1: mock_derivatives (derivatives_directory optional)
 │   ├── site2/data.json                # Site 2
 │   └── site3/data.json                # Site 3
 ├── makeJob.py                         # Creates job/ folder from app/ config
@@ -109,7 +109,6 @@ nfc-halfpipe/
 
 ```json
 {
-  "bids_directory": "/path/to/bids",
   "derivatives_directory": null,
   "mock_derivatives": {
     "n_subjects": 12,
@@ -123,7 +122,7 @@ nfc-halfpipe/
 }
 ```
 
-`mock_derivatives` is read when `run_halfpipe` is `false`. In production, only `bids_directory` (and optionally `derivatives_directory`) are needed.
+`mock_derivatives` is read when `run_halfpipe` is `false`. In production, the data directory the user points to in the NeuroFLAME UI is used directly as the BIDS root — no `bids_directory` field is needed. Optionally set `derivatives_directory` to an existing HALFpipe derivatives path to skip subject-level reprocessing.
 
 ---
 
@@ -162,13 +161,9 @@ In `parameters.json`, set `"run_halfpipe": true` and provide a valid `halfpipe_s
 }
 ```
 
-**3. Point each site to its data**
+**3. Point each site to its BIDS data**
 
-```json
-{
-  "bids_directory": "/path/to/site/bids"
-}
-```
+Each site's data directory (configured in the NeuroFLAME UI) must be the BIDS root for that site. The computation reads it automatically via `DATA_DIR` — no `bids_directory` field is required in `data.json`. Optionally add `"derivatives_directory"` to reuse existing HALFpipe outputs.
 
 **4. Install nibabel for ROI extraction and voxelwise aggregation**
 

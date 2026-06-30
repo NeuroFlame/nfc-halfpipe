@@ -67,18 +67,18 @@ Three aggregation modes are supported and can be combined:
 
 #### Input Description
 
-Each site requires a `data.json` file in its data directory.
+**BIDS data directory**: Each site's data directory — the directory the site administrator points to in the NeuroFLAME UI — must be the BIDS root for that site. The computation receives this path automatically and uses it as the input to HALFpipe. No `bids_directory` field is needed in `data.json`.
+
+Each site may optionally provide a `data.json` file in its data directory:
 
 ```json
 {
-    "bids_directory": "/path/to/site/bids",
     "derivatives_directory": "/path/to/existing/halfpipe/derivatives"
 }
 ```
 
 | Field | Type | Description | Required |
 |---|---|---|---|
-| `bids_directory` | `string` | Absolute path to the site's BIDS-formatted (or HALFpipe-compatible) fMRI data directory. Required when `run_halfpipe` is `true`. | Conditional |
 | `derivatives_directory` | `string` | Absolute path to an existing HALFpipe derivatives directory (`derivatives/halfpipe/`). Overrides automatic derivative discovery when provided. | No |
 
 HALFpipe does not require strict BIDS formatting; file paths can be specified using glob patterns in `halfpipe_spec.files`. Refer to the [HALFpipe documentation](https://github.com/HALFpipe/HALFpipe) for supported input formats.
@@ -125,7 +125,7 @@ The server broadcasts the aggregated results (QC summary, global ROI values, and
 #### Assumptions
 
 - HALFpipe and its neuroimaging dependencies (fmriprep, FSL, AFNI) are available in the Docker image used at each site when `run_halfpipe` is `true`. Use `ghcr.io/halfpipe/halfpipe:latest` as the base image.
-- Each site's fMRI data is organized according to the path patterns specified in `halfpipe_spec.files`.
+- Each site's data directory (selected in the NeuroFLAME UI) is the BIDS root. File paths in `halfpipe_spec.files` use the `{bids_directory}` placeholder, which the computation substitutes with that path at runtime.
 - The atlas NIfTI provided in `roi_extraction.atlas_path` uses the same MNI template space as the HALFpipe output (MNI152NLin2009cAsym by default).
 - All sites have the atlas file at the same absolute path, or the path is mounted at a consistent location inside the container.
 - The computation requires at least two participating sites.
