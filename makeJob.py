@@ -10,7 +10,7 @@ Usage (from project root):
 
 This will:
     - Remove and recreate the 'job' folder
-    - Copy server/client configs
+    - Copy server/client configs and custom code into each app's custom/ directory
     - Set min_clients in the first workflow to the number of sites
     - Generate meta.json for the job
 """
@@ -21,8 +21,13 @@ import json
 
 JOB_FOLDER = 'job'
 SERVER_FOLDER = 'server'
+CODE_DIR = 'app/code'
 SERVER_CONFIG_SRC = 'app/config/config_fed_server.json'
 CLIENT_CONFIG_SRC = 'app/config/config_fed_client.json'
+
+# Packages copied into each app's custom/ directory
+SERVER_PACKAGES = ['aggregator', 'controller', '_utils']
+CLIENT_PACKAGES = ['executor', '_utils']
 
 def parse_sites_arg(sites_arg):
     if ' ' in sites_arg:
@@ -34,6 +39,14 @@ def create_job_folder(job_folder):
         shutil.rmtree(job_folder)
     os.makedirs(job_folder)
 
+def _copy_custom_code(app_folder, packages):
+    custom_dir = os.path.join(app_folder, 'custom')
+    os.makedirs(custom_dir, exist_ok=True)
+    for pkg in packages:
+        src = os.path.join(CODE_DIR, pkg)
+        dst = os.path.join(custom_dir, pkg)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst)
 
 def create_server_folder(job_folder):
     server_app_folder = os.path.join(job_folder, SERVER_FOLDER)
@@ -41,6 +54,7 @@ def create_server_folder(job_folder):
     os.makedirs(config_dir)
     config_dst = os.path.join(config_dir, 'config_fed_server.json')
     shutil.copy(SERVER_CONFIG_SRC, config_dst)
+    _copy_custom_code(server_app_folder, SERVER_PACKAGES)
     return config_dst
 
 def update_min_clients_in_workflow(config_path, n_sites):
@@ -60,6 +74,7 @@ def create_client_folders(job_folder, sites):
         config_dir = os.path.join(client_app_folder, 'config')
         os.makedirs(config_dir)
         shutil.copy(CLIENT_CONFIG_SRC, os.path.join(config_dir, 'config_fed_client.json'))
+        _copy_custom_code(client_app_folder, CLIENT_PACKAGES)
 
 def create_meta_json(job_folder, job_name, sites):
     meta = {
@@ -81,7 +96,6 @@ def main():
     sites = parse_sites_arg(args.sites)
     n_sites = len(sites)
     job_name = JOB_FOLDER
-
 
     create_job_folder(JOB_FOLDER)
     server_config_path = create_server_folder(JOB_FOLDER)

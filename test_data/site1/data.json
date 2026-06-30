@@ -1,13 +1,60 @@
-[
-    24,
-    424,
-    52,
-    25,
-    646,
-    363,
-    47,
-    74,
-    88,
-    65,
-    46
-]
+{
+  "_note": "Site 1 — 12 subjects, low motion. Set bids_directory to the site's BIDS root inside the container when run_halfpipe=true. The local path below is for simulator testing only.",
+  "bids_directory": "/Users/admin/Projects/NeuroFLAME Computations/nfc-halfpipe/test_data/site1/bids",
+  "derivatives_directory": null,
+  "mock_derivatives": {
+    "_note": "Used when run_halfpipe=false. Parcel labels (parcel_NNN) match integer IDs of the Schaefer 2018 200-parcel 17-network atlas. This mock uses 20 representative parcels spanning visual, somatomotor, attention, control, and default-mode networks.",
+    "n_subjects": 12,
+    "qc_metadata": {
+      "mean_fd": 0.24,
+      "mean_fd_perc": 5.1
+    },
+    "roi_values": {
+      "reho": {
+        "parcel_001": 0.631,
+        "parcel_002": 0.618,
+        "parcel_003": 0.624,
+        "parcel_004": 0.609,
+        "parcel_005": 0.587,
+        "parcel_006": 0.574,
+        "parcel_007": 0.591,
+        "parcel_008": 0.563,
+        "parcel_009": 0.452,
+        "parcel_010": 0.444,
+        "parcel_011": 0.471,
+        "parcel_012": 0.438,
+        "parcel_013": 0.479,
+        "parcel_014": 0.463,
+        "parcel_015": 0.456,
+        "parcel_016": 0.487,
+        "parcel_017": 0.401,
+        "parcel_018": 0.414,
+        "parcel_019": 0.387,
+        "parcel_020": 0.423
+      },
+      "alff": {
+        "parcel_001": 0.628,
+        "parcel_002": 0.614,
+        "parcel_003": 0.621,
+        "parcel_004": 0.607,
+        "parcel_005": 0.672,
+        "parcel_006": 0.659,
+        "parcel_007": 0.681,
+        "parcel_008": 0.645,
+        "parcel_009": 0.619,
+        "parcel_010": 0.608,
+        "parcel_011": 0.634,
+        "parcel_012": 0.597,
+        "parcel_013": 0.714,
+        "parcel_014": 0.698,
+        "parcel_015": 0.727,
+        "parcel_016": 0.689,
+        "parcel_017": 0.576,
+        "parcel_018": 0.558,
+        "parcel_019": 0.547,
+        "parcel_020": 0.591
+      }
+    },
+    "voxelwise_stats": {}
+  }
+}

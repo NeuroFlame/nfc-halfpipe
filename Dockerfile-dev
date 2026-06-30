@@ -1,16 +1,23 @@
+# Base image: use HALFpipe's Docker image so halfpipe, fmriprep, FSL, etc. are available.
+# For development/simulation without actual fMRI data (run_halfpipe=false), a lighter
+# Python image is sufficient — swap the FROM line accordingly.
+#
+# Production (with HALFpipe):
+#   FROM ghcr.io/halfpipe/halfpipe:latest
+#
+# Development / simulation (mock data only):
 FROM python:3.8-buster
 
-RUN python3 -m pip install -U pip
-RUN python3 -m pip install -U setuptools
-RUN python3 -m pip install nvflare==2.4.0
+RUN python3 -m pip install -U pip setuptools
 
 WORKDIR /workspace/
 
-# Copy the requirements.txt file
 COPY ./requirements.txt /workspace/requirements.txt
-
-# Install dependencies from requirements.txt
 RUN python3 -m pip install -r /workspace/requirements.txt
+
+# nibabel is optional: needed for real NIfTI-based ROI extraction and voxelwise aggregation.
+# Uncomment if your sites will run real HALFpipe pipelines:
+# RUN python3 -m pip install nibabel>=5.0.0
 
 ENV PYTHONPATH=/workspace/app/code/
 ENV NVFLARE_POC_WORKSPACE=/workspace/poc-workspace

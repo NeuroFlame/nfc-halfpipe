@@ -1,3 +1,62 @@
 {
-    "decimal_places": 10
+  "_note": "Mock test run: run_halfpipe=false uses mock_derivatives from each site's data.json. Set run_halfpipe=true and provide bids_directory in each site's data.json to invoke HALFpipe on real data.",
+  "run_halfpipe": false,
+  "aggregation_types": ["qc_metadata", "roi_values"],
+  "halfpipe_spec": {
+    "version": "1.0.0",
+    "files": [
+      {
+        "datatype": "func",
+        "suffix": "bold",
+        "tags": { "task": "rest" },
+        "path": "{bids_directory}/sub-{subject}/func/sub-{subject}_task-rest_bold.nii.gz"
+      },
+      {
+        "datatype": "anat",
+        "suffix": "T1w",
+        "tags": {},
+        "path": "{bids_directory}/sub-{subject}/anat/sub-{subject}_T1w.nii.gz"
+      }
+    ],
+    "settings": [
+      {
+        "name": "default",
+        "ica_aroma": true,
+        "bandpass_filter": {
+          "type": "gaussian",
+          "lp_width": 125.0
+        },
+        "smoothing": {
+          "fwhm": 6.0
+        },
+        "grand_mean_scaling": {
+          "mean": 10000.0
+        }
+      }
+    ],
+    "features": [
+      {
+        "name": "reho",
+        "type": "reho",
+        "setting": "default"
+      },
+      {
+        "name": "alff",
+        "type": "alff",
+        "setting": "default"
+      }
+    ],
+    "models": []
+  },
+  "roi_extraction": {
+    "_note": "Schaefer 2018 200-parcel 17-network atlas in MNI152NLin2009cAsym 2mm space. Must be available at this path inside each site's container when run_halfpipe=true.",
+    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz",
+    "features": ["reho", "alff"]
+  },
+  "voxelwise_maps": {
+    "spreadsheet": null,
+    "covariates": []
+  },
+  "min_subjects": 5,
+  "n_procs": 1
 }

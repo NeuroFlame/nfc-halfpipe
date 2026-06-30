@@ -1,23 +1,25 @@
 {
   "format_version": 2,
   "server": {
-    "heart_beat_timeout": 600
+    "heart_beat_timeout": 3600
   },
   "task_data_filters": [],
   "task_result_filters": [],
   "components": [
     {
       "id": "aggregator",
-      "path": "aggregator.aggregator.MyAggregator",
-      "args": {
-      }
+      "path": "aggregator.aggregator.HALFpipeAggregator",
+      "args": {}
     }
   ],
   "workflows": [
     {
       "id": "controller",
-      "path": "controller.controller.MyController",
+      "path": "controller.controller.HALFpipeController",
       "args": {
+        "min_clients": 2,
+        "wait_time_after_min_received": 10,
+        "task_timeout": 0
       }
     }
   ]

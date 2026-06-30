@@ -1,38 +1,205 @@
-## Purpose
+## nfc-halfpipe
 
-This repository serves as the **central resource** for:
+Federated fMRI analysis using [HALFpipe](https://github.com/HALFpipe/HALFpipe) on the NeuroFLAME platform. Each participating site runs HALFpipe's preprocessing and feature extraction locally; only summary statistics are shared across sites.
 
-- **Technical documentation** on the NeuroFLAME Computation Interface.
-- **Publishing requirements** for computations.
-- **Guides, references, and best practices** for developing, validating, and publishing computations on NeuroFLAME.
-- A **boilerplate application** to demonstrate basic functionality and provide a starting point for computation development.
+Three aggregation modes are supported (and can be combined):
 
-## Boilerplate Application
+| Mode | What sites share | Aggregated output |
+|---|---|---|
+| `qc_metadata` | Motion QC stats (mean FD, FD%) | Cross-site weighted QC report |
+| `roi_values` | Atlas-parcellated feature means (ReHo, ALFF, …) | Weighted global parcel means |
+| `voxelwise_maps` | Within-site NIfTI stat maps | Weighted meta-analysis maps |
 
-Included in this repository:
+---
 
-- A demonstration of basic NeuroFLAME computation functionality.
-- A workflow for developing and testing computations.
-- A foundation for new computation projects.
+## Quick Start (Simulation with Mock Data)
 
-### Quick Start
+No fMRI data or HALFpipe installation required — the test data uses pre-computed mock derivatives.
 
-To quickly get up and running with the boilerplate application, refer to the
-- [Hello World Tutorial](docs/computation_development/tutorial_hello_world.md)
+**1. Install dependencies**
 
-## Documentation
+```bash
+pip install -r requirements.txt
+```
 
-- **[Computation Interface Documentation](docs/neuroflame_computation_interface/neuroflame_computation_interface.md)**: How computations interact with NeuroFLAME.
-- **[Developer Guides](docs/computation_development/computation_development.md)**: Tips for seamless computation development.
-- **[Publishing Requirements](docs/computation_publishing/Computation_Publishing_Requirements.md)**: Requirements and instructions for publishing.
+**2. Build the job folder for three sites**
 
-## Computation Module Library
+```bash
+python makeJob.py site1,site2,site3
+```
 
-### Example Computation Modules
+**3. Run the NVFlare simulator**
 
-- **[mint-computation-single-round-ridge-regression](https://github.com/trendscenter/mint-computation-single-round-ridge-regression)**
-- **[flare-file-transfer](https://github.com/dylanmartin/flare-file-transfer/)**
+```bash
+python debug.py job -w simulator_workspace -c site1,site2,site3
+```
 
-### TReNDS Computation Modules
+**4. Check results**
 
-- **[computation_single_round_ridge_regression_freesurfer](https://github.com/NeuroFlame/computation_single_round_ridge_regression_freesurfer)**
+```
+test_output/simulate_job/site1/global_results.json   ← aggregated results
+test_output/simulate_job/site1/index.html             ← interactive HTML report
+test_output/simulate_job/site2/global_results.json
+test_output/simulate_job/site2/index.html
+test_output/simulate_job/site3/global_results.json
+test_output/simulate_job/site3/index.html
+```
+
+Open any `index.html` in a browser to view the federated QC summary, per-feature ROI value tables, and optional voxelwise map catalogue.
+
+---
+
+## Project Structure
+
+```
+nfc-halfpipe/
+├── app/
+│   ├── code/
+│   │   ├── _utils/utils.py            # Path helpers (data, output, parameters directories)
+│   │   ├── executor/
+│   │   │   ├── executor.py            # HALFpipeExecutor — routes all four NVFlare tasks
+│   │   │   ├── run_halfpipe.py        # Runs HALFpipe subprocess (or returns mock data)
+│   │   │   ├── extract_qc_metadata.py # Packages motion QC for transmission
+│   │   │   ├── extract_roi_values.py  # Extracts atlas-parcellated means from NIfTI maps
+│   │   │   └── run_site_group_level.py# Runs halfpipe group-level within a site
+│   │   ├── controller/
+│   │   │   └── controller.py          # HALFpipeController — multi-round broadcast logic
+│   │   └── aggregator/
+│   │       ├── aggregator.py          # HALFpipeAggregator — three accept methods + aggregate
+│   │       └── aggregate_results.py   # Pure aggregation functions (no NVFlare deps)
+│   └── config/
+│       ├── config_fed_client.json     # Task list for executor
+│       └── config_fed_server.json     # Controller + aggregator wiring
+├── test_data/
+│   ├── server/parameters.json         # Computation parameters (aggregation_types, halfpipe_spec, …)
+│   ├── site1/data.json                # Site 1: bids_directory + mock_derivatives
+│   ├── site2/data.json                # Site 2
+│   └── site3/data.json                # Site 3
+├── makeJob.py                         # Creates job/ folder from app/ config
+├── debug.py                           # Launches NVFlare simulator
+├── Dockerfile-dev                     # Dev image (swap FROM for production HALFpipe image)
+└── display_notes.md                   # Platform-facing computation description
+```
+
+---
+
+## Configuration
+
+### `test_data/server/parameters.json`
+
+```json
+{
+  "run_halfpipe": false,
+  "aggregation_types": ["qc_metadata", "roi_values"],
+  "halfpipe_spec": { ... },
+  "roi_extraction": {
+    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks.nii.gz",
+    "features": ["reho", "alff"]
+  },
+  "voxelwise_maps": {
+    "spreadsheet": null,
+    "covariates": []
+  },
+  "min_subjects": 1,
+  "n_procs": 1
+}
+```
+
+### `test_data/siteN/data.json`
+
+```json
+{
+  "bids_directory": "/path/to/bids",
+  "derivatives_directory": null,
+  "mock_derivatives": {
+    "n_subjects": 12,
+    "qc_metadata": { "mean_fd": 0.38, "mean_fd_perc": 8.2 },
+    "roi_values": {
+      "reho": { "parcel_001": 0.412, "parcel_002": 0.367 },
+      "alff": { "parcel_001": 0.621, "parcel_002": 0.587 }
+    },
+    "voxelwise_stats": {}
+  }
+}
+```
+
+`mock_derivatives` is read when `run_halfpipe` is `false`. In production, only `bids_directory` (and optionally `derivatives_directory`) are needed.
+
+---
+
+## Running with Real HALFpipe Data
+
+**1. Update the Docker image**
+
+In `Dockerfile-dev`, change the `FROM` line:
+
+```dockerfile
+FROM ghcr.io/halfpipe/halfpipe:latest
+```
+
+**2. Enable HALFpipe execution**
+
+In `parameters.json`, set `"run_halfpipe": true` and provide a valid `halfpipe_spec`:
+
+```json
+{
+  "run_halfpipe": true,
+  "aggregation_types": ["qc_metadata", "roi_values"],
+  "halfpipe_spec": {
+    "version": "1.0.0",
+    "files": [ { "datatype": "func", "suffix": "bold", ... } ],
+    "settings": [ { "name": "default", "bandpass_filter": { ... } } ],
+    "features": [
+      { "name": "reho", "type": "reho", "setting": "default" },
+      { "name": "alff", "type": "alff", "setting": "default" }
+    ],
+    "models": []
+  },
+  "roi_extraction": {
+    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks.nii.gz",
+    "features": ["reho", "alff"]
+  }
+}
+```
+
+**3. Point each site to its data**
+
+```json
+{
+  "bids_directory": "/path/to/site/bids"
+}
+```
+
+**4. Install nibabel for ROI extraction and voxelwise aggregation**
+
+Uncomment the `nibabel` line in `requirements.txt` or add it to the Dockerfile.
+
+---
+
+## Task Flow
+
+```
+Phase 1  → RUN_HALFPIPE (all sites)
+             site: run halfpipe → extract QC
+             server: store QC per site
+
+Phase 2a → SEND_ROI_VALUES (if "roi_values" in aggregation_types)
+             site: extract parcel means from NIfTI feature maps
+             server: store ROI values per site
+
+Phase 2b → SEND_SITE_STATS (if "voxelwise_maps" in aggregation_types)
+             site: run halfpipe group-level → compress NIfTI maps
+             server: store stat maps per site
+
+Phase 3  → (server aggregates all collected data)
+           → ACCEPT_GLOBAL_RESULTS (all sites)
+             site: save global_results.json to output directory
+```
+
+---
+
+## NeuroFLAME Documentation
+
+- **[Computation Interface](docs/neuroflame_computation_interface/neuroflame_computation_interface.md)**
+- **[Developer Guides](docs/computation_development/computation_development.md)**
+- **[Publishing Requirements](docs/computation_publishing/Computation_Publishing_Requirements.md)**

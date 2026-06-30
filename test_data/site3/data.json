@@ -1,9 +1,60 @@
-[
- 75,
- 35,
- 56,
- 13,
- 3,
- 53,
- 12
-]
+{
+  "_note": "Site 3 — 15 subjects, low motion (high-quality acquisition protocol). Lowest FD in the federation, slightly elevated ReHo/ALFF.",
+  "bids_directory": "/Users/admin/Projects/NeuroFLAME Computations/nfc-halfpipe/test_data/site3/bids",
+  "derivatives_directory": null,
+  "mock_derivatives": {
+    "_note": "Used when run_halfpipe=false. Same 20-parcel Schaefer subset as site1. Values reflect slightly higher ReHo/ALFF due to lower motion at this site.",
+    "n_subjects": 15,
+    "qc_metadata": {
+      "mean_fd": 0.19,
+      "mean_fd_perc": 3.8
+    },
+    "roi_values": {
+      "reho": {
+        "parcel_001": 0.648,
+        "parcel_002": 0.634,
+        "parcel_003": 0.641,
+        "parcel_004": 0.625,
+        "parcel_005": 0.601,
+        "parcel_006": 0.589,
+        "parcel_007": 0.607,
+        "parcel_008": 0.578,
+        "parcel_009": 0.464,
+        "parcel_010": 0.456,
+        "parcel_011": 0.484,
+        "parcel_012": 0.451,
+        "parcel_013": 0.492,
+        "parcel_014": 0.476,
+        "parcel_015": 0.469,
+        "parcel_016": 0.501,
+        "parcel_017": 0.413,
+        "parcel_018": 0.427,
+        "parcel_019": 0.399,
+        "parcel_020": 0.436
+      },
+      "alff": {
+        "parcel_001": 0.647,
+        "parcel_002": 0.632,
+        "parcel_003": 0.638,
+        "parcel_004": 0.625,
+        "parcel_005": 0.691,
+        "parcel_006": 0.679,
+        "parcel_007": 0.699,
+        "parcel_008": 0.663,
+        "parcel_009": 0.636,
+        "parcel_010": 0.624,
+        "parcel_011": 0.651,
+        "parcel_012": 0.614,
+        "parcel_013": 0.733,
+        "parcel_014": 0.716,
+        "parcel_015": 0.746,
+        "parcel_016": 0.708,
+        "parcel_017": 0.593,
+        "parcel_018": 0.574,
+        "parcel_019": 0.564,
+        "parcel_020": 0.608
+      }
+    },
+    "voxelwise_stats": {}
+  }
+}

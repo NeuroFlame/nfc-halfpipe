@@ -1,117 +1,127 @@
 import json
 import logging
+from typing import Callable, Optional
+
 from nvflare.apis.impl.controller import Controller, Task, ClientTask
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.apis.shareable import Shareable
+
 from _utils.utils import get_parameters_file_path
-from typing import Callable
 
+TASK_RUN_HALFPIPE = "RUN_HALFPIPE"
+TASK_SEND_ROI_VALUES = "SEND_ROI_VALUES"
+TASK_SEND_SITE_STATS = "SEND_SITE_STATS"
+TASK_ACCEPT_GLOBAL_RESULTS = "ACCEPT_GLOBAL_RESULTS"
 
-TASK_NAME_GET_LOCAL_AVERAGE_AND_COUNT = "GET_LOCAL_AVERAGE_AND_COUNT"
-TASK_NAME_ACCEPT_GLOBAL_AVERAGE = "ACCEPT_GLOBAL_AVERAGE"
 AGGREGATOR_ID = "aggregator"
 
 
-class MyController(Controller):
+class HALFpipeController(Controller):
+    """
+    NVFlare controller for federated HALFpipe analysis.
+
+    Control flow:
+      Phase 1  — broadcast RUN_HALFPIPE to all sites (runs subject-level, collects QC)
+      Phase 2a — broadcast SEND_ROI_VALUES if "roi_values" in aggregation_types
+      Phase 2b — broadcast SEND_SITE_STATS  if "voxelwise_maps" in aggregation_types
+      Phase 3  — aggregate all collected data and broadcast ACCEPT_GLOBAL_RESULTS
+    """
+
     def __init__(
         self,
         min_clients: int = 2,
         wait_time_after_min_received: int = 10,
         task_timeout: int = 0,
     ):
-        """
-        Initializes the SrrController with specific parameters for task broadcasting.
-
-        :param min_clients: Minimum number of client responses required.
-        :param wait_time_after_min_received: Time to wait after receiving minimum responses.
-        :param task_timeout: Timeout for task completion.
-        """
         super().__init__()
-        self._task_timeout = task_timeout
         self._min_clients = min_clients
         self._wait_time_after_min_received = wait_time_after_min_received
+        self._task_timeout = task_timeout
+        self._params: Optional[dict] = None
 
-#### Computation Author Defined Section ####
-### This is where computation authors will define the control flow logic ###
+    # ------------------------------------------------------------------ #
+    # Framework lifecycle methods                                          #
+    # ------------------------------------------------------------------ #
 
     def start_controller(self, fl_ctx: FLContext) -> None:
-        """
-        Called when the controller starts. It assigns the SRR aggregator component
-        and loads computation parameters into the shared context.
-
-        This is a Framework-Specific Required Method.
-
-        :param fl_ctx: Federated learning context for this run.
-        """
-        # Assign the aggregator to the controller
         self.aggregator = self._engine.get_component(AGGREGATOR_ID)
-        # Load and set computation parameters for the sites
-        self._load_and_set_computation_parameters(fl_ctx)
+        self._params = self._load_params(fl_ctx)
+
+    def stop_controller(self, fl_ctx: FLContext) -> None:
+        pass
+
+    def process_result_of_unknown_task(self, task: Task, fl_ctx: FLContext) -> None:
+        pass
+
+    # ------------------------------------------------------------------ #
+    # Main control flow                                                    #
+    # ------------------------------------------------------------------ #
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
-        """
-        Main method for defining the control flow of computations. This is where
-        developers implement the main workflow. Broadcasts tasks to all sites, 
-        aggregates results, and broadcasts the final global result.
+        aggregation_types = self._params.get("aggregation_types", ["qc_metadata"])
+        if isinstance(aggregation_types, str):
+            aggregation_types = [aggregation_types]
 
-        This is the primary method that computation authors should focus on.
+        logging.info(f"Aggregation types: {aggregation_types}")
 
-        :param abort_signal: Signal for aborting the flow if needed.
-        :param fl_ctx: Federated learning context for this run.
-        """
-        # Broadcast the regression task and send site results to the aggregator
+        # Phase 1: Run HALFpipe + collect QC on every site
+        logging.info("Phase 1: Running HALFpipe on all sites")
         self._broadcast_task(
-            task_name=TASK_NAME_GET_LOCAL_AVERAGE_AND_COUNT,
+            task_name=TASK_RUN_HALFPIPE,
             data=Shareable(),
-            result_cb=self._accept_site_regression_result,
+            result_cb=self.aggregator.accept_halfpipe_result,
             fl_ctx=fl_ctx,
             abort_signal=abort_signal,
         )
 
-        # Aggregate results from all sites
-        aggregate_result = self.aggregator.aggregate(fl_ctx)
+        # Phase 2a: Collect parcellated ROI values
+        if "roi_values" in aggregation_types:
+            logging.info("Phase 2a: Collecting ROI values from all sites")
+            self._broadcast_task(
+                task_name=TASK_SEND_ROI_VALUES,
+                data=Shareable(),
+                result_cb=self.aggregator.accept_roi_result,
+                fl_ctx=fl_ctx,
+                abort_signal=abort_signal,
+            )
 
-        # Broadcast the global aggregated results to all sites
+        # Phase 2b: Collect within-site voxelwise stat maps
+        if "voxelwise_maps" in aggregation_types:
+            logging.info("Phase 2b: Collecting voxelwise stat maps from all sites")
+            self._broadcast_task(
+                task_name=TASK_SEND_SITE_STATS,
+                data=Shareable(),
+                result_cb=self.aggregator.accept_voxelwise_result,
+                fl_ctx=fl_ctx,
+                abort_signal=abort_signal,
+            )
+
+        # Phase 3: Aggregate and send global results back to all sites
+        logging.info("Phase 3: Aggregating results and sending back to sites")
+        global_results_shareable = self.aggregator.aggregate(fl_ctx)
         self._broadcast_task(
-            task_name=TASK_NAME_ACCEPT_GLOBAL_AVERAGE,
-            data=aggregate_result,
+            task_name=TASK_ACCEPT_GLOBAL_RESULTS,
+            data=global_results_shareable,
             result_cb=None,
             fl_ctx=fl_ctx,
             abort_signal=abort_signal,
         )
 
-    def _accept_site_regression_result(self, client_task: ClientTask, fl_ctx: FLContext) -> bool:
-        """
-        Callback method that processes each site's regression result and sends it
-        to the aggregator for aggregation.
+        logging.info("Federated HALFpipe computation complete")
 
-        Computation authors can override this if they need to modify how results
-        are processed before aggregation, but this is optional.
+    # ------------------------------------------------------------------ #
+    # Helpers                                                              #
+    # ------------------------------------------------------------------ #
 
-        :param client_task: The task result received from a client site.
-        :param fl_ctx: Federated learning context for this run.
-        :return: Boolean indicating whether the result was successfully accepted.
-        """
-        return self.aggregator.accept(client_task.result, fl_ctx)
-
-#### End of Computation Author Defined Section ####
-
-#### Framework Helper Methods: No modification necessary ####
-
-    def _broadcast_task(self, task_name: str, data: Shareable, result_cb: Callable[[ClientTask, FLContext], bool], fl_ctx: FLContext, abort_signal: Signal) -> None:
-        """
-        Broadcasts a task to all client sites and waits for responses.
-
-        Computation authors can use this method to simplify task broadcasting.
-        Typically, this method does not need to be modified.
-
-        :param task_name: Name of the task to broadcast.
-        :param data: Shareable object containing the data to send.
-        :param result_cb: Callback for handling results from each client site.
-        :param fl_ctx: Federated learning context for this run.
-        :param abort_signal: Signal used to abort the task if needed.
-        """
+    def _broadcast_task(
+        self,
+        task_name: str,
+        data: Shareable,
+        result_cb: Optional[Callable],
+        fl_ctx: FLContext,
+        abort_signal: Signal,
+    ) -> None:
         self.broadcast_and_wait(
             task=Task(
                 name=task_name,
@@ -126,44 +136,15 @@ class MyController(Controller):
             abort_signal=abort_signal,
         )
 
-    def _load_and_set_computation_parameters(self, fl_ctx: FLContext) -> None:
-        """
-        Loads computation parameters from a file and sets them in the shared context
-        for all sites to access.
-
-        This is a utility method that computation authors typically do not need to modify.
-
-        :param fl_ctx: Federated learning context for this run.
-        """
-        with open(get_parameters_file_path(fl_ctx), 'r') as f:
-            fl_ctx.set_prop(
-                key="COMPUTATION_PARAMETERS",
-                value=json.load(f),
-                private=False,
-                sticky=True
-            )
-
-#### Framework-Specific Required Methods: No modification necessary ####
-
-    def process_result_of_unknown_task(self, task: Task, fl_ctx: FLContext) -> None:
-        """
-        Handles results for tasks that are not explicitly recognized.
-        This method can be overridden by developers for custom handling.
-
-        This is a Framework-Specific Required Method.
-
-        :param task: The task whose result is being processed.
-        :param fl_ctx: Federated learning context for this run.
-        """
-        pass
-
-    def stop_controller(self, fl_ctx: FLContext) -> None:
-        """
-        Called when the controller stops. Developers can override this method
-        for cleanup or custom logic.
-
-        This is a Framework-Specific Required Method.
-
-        :param fl_ctx: Federated learning context for this run.
-        """
-        pass
+    def _load_params(self, fl_ctx: FLContext) -> dict:
+        params_path = get_parameters_file_path(fl_ctx)
+        with open(params_path) as f:
+            params = json.load(f)
+        fl_ctx.set_prop(
+            key="COMPUTATION_PARAMETERS",
+            value=params,
+            private=False,
+            sticky=True,
+        )
+        logging.info(f"Loaded parameters from {params_path}")
+        return params

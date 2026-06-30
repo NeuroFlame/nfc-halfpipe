@@ -1,70 +1,99 @@
-from typing import Dict, Any
-from nvflare.apis.shareable import Shareable
+import logging
+from typing import Any, Dict
+
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.apis.fl_constant import ReservedKey
-from .get_global_average import get_global_average
+from nvflare.apis.shareable import Shareable
+from nvflare.app_common.abstract.aggregator import Aggregator
 
-class MyAggregator(Aggregator):
+from .aggregate_results import aggregate_qc_metadata, aggregate_roi_values, aggregate_voxelwise
+
+
+class HALFpipeAggregator(Aggregator):
     """
-    SrrAggregator handles the aggregation of results from multiple client sites.
-    It stores individual site results and computes a global result based on the aggregation logic.
+    Collects per-site results from each computation phase and aggregates them.
 
-    This class can be customized if specific aggregation logic is needed.
+    Three storage buckets correspond to the three task types:
+      halfpipe_results  — from RUN_HALFPIPE  (QC metadata)
+      roi_results       — from SEND_ROI_VALUES
+      voxelwise_results — from SEND_SITE_STATS
     """
 
     def __init__(self):
-        """
-        Initializes the SrrAggregator with a dictionary to store results from multiple sites.
-        """
         super().__init__()
-        # Store results as a dictionary
-        self.site_results: Dict[str, Dict[str, Any]] = {}
+        self._halfpipe_results: Dict[str, dict] = {}
+        self._roi_results: Dict[str, dict] = {}
+        self._voxelwise_results: Dict[str, dict] = {}
+
+    # ------------------------------------------------------------------ #
+    # Phase-specific accept methods                                        #
+    # ------------------------------------------------------------------ #
+
+    def accept_halfpipe_result(self, client_task, fl_ctx: FLContext) -> bool:
+        site_name = _get_site_name(client_task.result)
+        result_data = client_task.result.get("result", {})
+        self._halfpipe_results[site_name] = result_data
+        logging.info(f"Accepted HALFpipe QC result from {site_name}: n_subjects={result_data.get('n_subjects')}")
+        return True
+
+    def accept_roi_result(self, client_task, fl_ctx: FLContext) -> bool:
+        site_name = _get_site_name(client_task.result)
+        result_data = client_task.result.get("result", {})
+        self._roi_results[site_name] = result_data
+        features = list(result_data.get("roi_values", {}).keys())
+        logging.info(f"Accepted ROI values from {site_name}: features={features}")
+        return True
+
+    def accept_voxelwise_result(self, client_task, fl_ctx: FLContext) -> bool:
+        site_name = _get_site_name(client_task.result)
+        result_data = client_task.result.get("result", {})
+        self._voxelwise_results[site_name] = result_data
+        n_maps = len(result_data.get("site_stats", {}))
+        logging.info(f"Accepted voxelwise stats from {site_name}: {n_maps} maps")
+        return True
+
+    # ------------------------------------------------------------------ #
+    # Required Aggregator interface method                                 #
+    # ------------------------------------------------------------------ #
 
     def accept(self, site_result: Shareable, fl_ctx: FLContext) -> bool:
-        """
-        Accepts a result from a site and stores it for later aggregation.
-
-        This method is called when a client site sends a result. Developers can override this 
-        if they need to handle or validate the results differently before storing them.
-
-        :param site_result: The result received from the client site.
-        :param fl_ctx: The federated learning context for this run.
-        :return: Boolean indicating if the result was successfully accepted.
-        """
-        site_name = site_result.get_peer_prop(
-            key=ReservedKey.IDENTITY_NAME, default=None)
-
-        # Store the result for the site using its identity name as the key
-        self.site_results[site_name] = site_result["result"]
+        """Fallback accept — routes by task type tag if present."""
+        task_type = site_result.get("task_type")
+        if task_type == "roi":
+            self._roi_results[_get_site_name(site_result)] = site_result.get("result", {})
+        elif task_type == "voxelwise":
+            self._voxelwise_results[_get_site_name(site_result)] = site_result.get("result", {})
+        else:
+            self._halfpipe_results[_get_site_name(site_result)] = site_result.get("result", {})
         return True
+
+    # ------------------------------------------------------------------ #
+    # Aggregation                                                          #
+    # ------------------------------------------------------------------ #
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
         """
-        Aggregates the results from all accepted client sites and produces a global result.
-
-        This is where the global aggregation logic happens. Developers can override this
-        if they need to change how the results from each site are combined.
-
-        :param fl_ctx: The federated learning context for this run.
-        :return: A Shareable object containing the aggregated global result.
+        Aggregate all collected results and return a Shareable containing
+        the global results to be broadcast back to all sites.
         """
+        global_results: Dict[str, Any] = {}
 
-        # Retrieve the decimal places from the computation parameters
-        computation_parameters = fl_ctx.get_prop("COMPUTATION_PARAMETERS")
-        decimal_places = computation_parameters.get("decimal_places", 2)
+        if self._halfpipe_results:
+            logging.info(f"Aggregating QC metadata from {len(self._halfpipe_results)} sites")
+            global_results["qc_metadata"] = aggregate_qc_metadata(self._halfpipe_results)
 
-        # Transform site_results into the format expected by get_global_average
-        items = [
-            {"average": result["average"], "count": result["count"]}
-            for result in self.site_results.values()
-            if "average" in result and "count" in result
-        ]
+        if self._roi_results:
+            logging.info(f"Aggregating ROI values from {len(self._roi_results)} sites")
+            global_results["roi_values"] = aggregate_roi_values(self._roi_results)
 
-        # Compute the global average using the helper function
-        global_average = get_global_average(items, decimal_places)
+        if self._voxelwise_results:
+            logging.info(f"Aggregating voxelwise maps from {len(self._voxelwise_results)} sites")
+            global_results["voxelwise_maps"] = aggregate_voxelwise(self._voxelwise_results)
 
-        # Create a new Shareable to store the aggregated result
-        outgoing_shareable = Shareable()
-        outgoing_shareable["global_average"] = global_average
-        return outgoing_shareable
+        outgoing = Shareable()
+        outgoing["global_results"] = global_results
+        return outgoing
+
+
+def _get_site_name(shareable: Shareable) -> str:
+    return shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="unknown_site")

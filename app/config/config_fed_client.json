@@ -3,11 +3,13 @@
   "executors": [
     {
       "tasks": [
-        "GET_LOCAL_AVERAGE_AND_COUNT",
-        "ACCEPT_GLOBAL_AVERAGE"
+        "RUN_HALFPIPE",
+        "SEND_ROI_VALUES",
+        "SEND_SITE_STATS",
+        "ACCEPT_GLOBAL_RESULTS"
       ],
       "executor": {
-        "path": "executor.executor.MyExecutor",
+        "path": "executor.executor.HALFpipeExecutor",
         "args": {}
       }
     }
