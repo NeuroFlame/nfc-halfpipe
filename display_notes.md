@@ -79,11 +79,17 @@ Each site may optionally provide a `data.json` file in its data directory:
 
 | Field | Type | Description | Required |
 |---|---|---|---|
-| `derivatives_directory` | `string` | Absolute path to an existing HALFpipe derivatives directory (`derivatives/halfpipe/`). Overrides automatic derivative discovery when provided. | No |
+| `derivatives_directory` | `string` | Path to an existing HALFpipe derivatives directory. When set alongside `"run_halfpipe": false` in parameters, the computation skips the HALFpipe subprocess and reads real QC metrics and feature maps from this directory instead. | No |
 
 HALFpipe does not require strict BIDS formatting; file paths can be specified using glob patterns in `halfpipe_spec.files`. Refer to the [HALFpipe documentation](https://github.com/HALFpipe/HALFpipe) for supported input formats.
 
-**Note for simulation / development**: Set `"run_halfpipe": false` in `parameters.json` and add a `"mock_derivatives"` key to `data.json` with pre-computed values (see the `test_data/` directory for examples). This allows the full federated workflow to be tested without a HALFpipe installation or fMRI data.
+**Three operating modes:**
+
+| `run_halfpipe` | `derivatives_directory` | Behaviour |
+|---|---|---|
+| `true` | — | HALFpipe runs subject-level preprocessing and feature extraction on the site's BIDS data |
+| `false` | set | HALFpipe is skipped; real QC metrics and feature maps are read from the existing derivatives directory |
+| `false` | not set | Pure mock mode — all values are read from `mock_derivatives` in `data.json` (for development/testing without fMRI data) |
 
 ---
 
@@ -93,10 +99,13 @@ The computation runs in three phases:
 
 **Phase 1 — Subject-Level Processing (all sites)**
 
-Each site's executor:
-1. Writes the provided `halfpipe_spec` to a local working directory and invokes HALFpipe (skipped when `run_halfpipe` is `false`).
-2. HALFpipe runs fmriprep preprocessing followed by single-subject feature extraction (ReHo, ALFF, seed correlation, task contrasts, etc.) for every subject.
-3. Motion QC statistics (mean framewise displacement, FD percentage above threshold) are extracted from the HALFpipe derivatives and sent to the server.
+Each site's executor operates in one of three modes depending on `run_halfpipe` and `derivatives_directory`:
+
+- **Run mode** (`run_halfpipe=true`): Writes the provided `halfpipe_spec` to a local working directory and invokes HALFpipe. HALFpipe runs fmriprep preprocessing followed by single-subject feature extraction (ReHo, ALFF, seed correlation, task contrasts, etc.) for every subject.
+- **Reuse mode** (`run_halfpipe=false`, `derivatives_directory` set): Skips the HALFpipe subprocess and reads real QC metrics and feature maps from an existing derivatives directory produced by a prior HALFpipe run.
+- **Mock mode** (`run_halfpipe=false`, no `derivatives_directory`): Uses pre-computed values from `mock_derivatives` in `data.json`. Intended for development and testing without fMRI data or a HALFpipe installation.
+
+In all modes, motion QC statistics (mean framewise displacement, FD percentage above threshold) are extracted and sent to the server.
 
 The server aggregates QC statistics from all sites using weighted means (weighted by each site's subject count).
 

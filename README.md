@@ -122,7 +122,7 @@ nfc-halfpipe/
 }
 ```
 
-`mock_derivatives` is read when `run_halfpipe` is `false`. In production, the data directory the user points to in the NeuroFLAME UI is used directly as the BIDS root — no `bids_directory` field is needed. Optionally set `derivatives_directory` to an existing HALFpipe derivatives path to skip subject-level reprocessing.
+`mock_derivatives` is read when `run_halfpipe=false` and no `derivatives_directory` is set (pure mock/dev mode). In production, the data directory the user points to in the NeuroFLAME UI is used directly as the BIDS root. Set `derivatives_directory` to skip re-running HALFpipe when derivatives from a prior run already exist — the computation will read real QC and feature maps from that path instead.
 
 ---
 
