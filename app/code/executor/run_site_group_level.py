@@ -30,9 +30,7 @@ def run_site_group_level(
             "n_subjects": N,
         }
     """
-    run_halfpipe = params.get("run_halfpipe", True)
-
-    if not run_halfpipe or derivatives_path is None:
+    if derivatives_path is None:
         mock = site_data.get("mock_derivatives", {})
         voxelwise = mock.get("voxelwise_stats", {})
         n_subjects = mock.get("n_subjects", 0)

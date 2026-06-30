@@ -95,10 +95,8 @@ class HALFpipeExecutor(Executor):
         _save_json(halfpipe_result, "halfpipe_result.json", fl_ctx)
 
         qc_payload = extract_qc_metadata(
-            site_data=self._site_data,
             n_subjects=halfpipe_result["n_subjects"],
             qc_summary=halfpipe_result["qc_summary"],
-            params=self._params,
         )
 
         _save_json(qc_payload, "qc_metadata.json", fl_ctx)

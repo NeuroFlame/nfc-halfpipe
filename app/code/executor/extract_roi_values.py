@@ -22,9 +22,7 @@ def extract_roi_values(
     Returns:
         {feature_name: {parcel_label: mean_value, ...}, ...}
     """
-    run_halfpipe = params.get("run_halfpipe", True)
-
-    if not run_halfpipe or derivatives_path is None:
+    if derivatives_path is None:
         mock = site_data.get("mock_derivatives", {})
         roi_values = mock.get("roi_values", {})
         logging.info(f"Using mock ROI values for features: {list(roi_values.keys())}")

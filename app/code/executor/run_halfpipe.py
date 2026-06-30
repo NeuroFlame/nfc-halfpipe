@@ -18,15 +18,26 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
     values from site_data["mock_derivatives"].
     """
     run_halfpipe = params.get("run_halfpipe", True)
-    mock = site_data.get("mock_derivatives", {})
 
     if not run_halfpipe:
+        derivatives_directory = site_data.get("derivatives_directory")
+        if derivatives_directory:
+            logging.info(f"Skipping HALFpipe; using existing derivatives at {derivatives_directory}")
+            qc_summary = _extract_qc_from_derivatives(derivatives_directory)
+            n_subjects = qc_summary.pop("n_subjects", 0)
+            return {
+                "status": "skipped",
+                "n_subjects": n_subjects,
+                "qc_summary": qc_summary,
+                "derivatives_path": derivatives_directory,
+            }
         logging.info("Skipping HALFpipe execution (run_halfpipe=false); using mock derivatives")
+        mock = site_data.get("mock_derivatives", {})
         return {
             "status": "skipped",
             "n_subjects": mock.get("n_subjects", 0),
             "qc_summary": mock.get("qc_metadata", {}),
-            "derivatives_path": site_data.get("derivatives_directory"),
+            "derivatives_path": None,
         }
 
     halfpipe_spec = params.get("halfpipe_spec")
