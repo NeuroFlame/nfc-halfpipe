@@ -24,7 +24,7 @@ Three aggregation modes are supported and can be combined:
                 "datatype": "func",
                 "suffix": "bold",
                 "tags": { "task": "rest" },
-                "path": "/data/{subject}/func/{subject}_task-rest_bold.nii.gz"
+                "path": "{bids_directory}/sub-{subject}/func/sub-{subject}_task-rest_bold.nii.gz"
             }
         ],
         "settings": [
@@ -56,13 +56,35 @@ Three aggregation modes are supported and can be combined:
 |---|---|---|---|---|---|
 | `run_halfpipe` | `bool` | Whether to run HALFpipe on local data. Set to `false` to use pre-computed derivatives. | `true`, `false` | `true` | ✅ Yes |
 | `aggregation_types` | `list[string]` | Which aggregation modes to run. Can be a single string or a list. | `"qc_metadata"`, `"roi_values"`, `"voxelwise_maps"` | `["qc_metadata"]` | ✅ Yes |
-| `halfpipe_spec` | `object` | Full HALFpipe `spec.json` content. Defines input files, preprocessing settings, and features. Required when `run_halfpipe` is `true`. | valid HALFpipe spec | — | Conditional |
+| `halfpipe_spec` | `object` | Full HALFpipe `spec.json` content. Defines input files, preprocessing settings, and features. Required when `run_halfpipe` is `true`. See [HALFpipe documentation](https://github.com/HALFpipe/HALFpipe) for the full spec format. File paths must use the `{bids_directory}` placeholder — see note below. | valid HALFpipe spec | — | Conditional |
 | `roi_extraction.atlas_path` | `string` | Absolute path to an integer-labeled parcellation atlas NIfTI file (`.nii` or `.nii.gz`). Each unique nonzero integer is treated as one parcel. Required when `"roi_values"` is in `aggregation_types`. | any valid path | — | Conditional |
 | `roi_extraction.features` | `list[string]` | HALFpipe feature names to extract ROI values from. Must match feature names defined in `halfpipe_spec`. | e.g. `["reho", "alff"]` | `[]` | Conditional |
 | `voxelwise_maps.spreadsheet` | `string` | Path to a covariate spreadsheet for within-site group-level analysis. Used only when `"voxelwise_maps"` is in `aggregation_types`. | any valid path | `null` | No |
 | `voxelwise_maps.covariates` | `list[string]` | Covariate column names to include in the within-site group-level design matrix. | list of strings | `[]` | No |
 | `min_subjects` | `int` | Minimum number of successfully preprocessed subjects required at a site before it contributes data to the aggregation. | any positive integer | `1` | No |
 | `n_procs` | `int` | Number of parallel processes to use when running HALFpipe. | any positive integer | `1` | No |
+
+
+**Note on `{bids_directory}` in `halfpipe_spec`**: HALFpipe normally expects absolute paths in `spec.json`. In this computation, use `{bids_directory}` as a placeholder wherever a path should be rooted at the site's BIDS directory. The computation substitutes `{bids_directory}` with each site's actual data directory at runtime, so a single shared `halfpipe_spec` in `parameters.json` works across all sites without per-site path configuration.
+
+```json
+"files": [
+    {
+        "datatype": "func",
+        "suffix": "bold",
+        "tags": { "task": "rest" },
+        "path": "{bids_directory}/sub-{subject}/func/sub-{subject}_task-rest_bold.nii.gz"
+    },
+    {
+        "datatype": "anat",
+        "suffix": "T1w",
+        "tags": {},
+        "path": "{bids_directory}/sub-{subject}/anat/sub-{subject}_T1w.nii.gz"
+    }
+]
+```
+
+`{subject}` is a standard HALFpipe placeholder expanded per-subject by HALFpipe itself. `{bids_directory}` is expanded by this computation before passing the spec to HALFpipe.
 
 
 #### Input Description
