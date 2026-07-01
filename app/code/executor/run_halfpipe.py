@@ -9,6 +9,25 @@ _HALFPIPE_SCHEMA_VERSION = "3.0"
 _HALFPIPE_TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M"
 
 
+def _halfpipe_env() -> dict:
+    # NVFlare's SimulatorRunner builds PYTHONPATH from the full sys.path, which
+    # includes nfc-env site-packages (numpy 2.5). Halfpipe's conda Python then
+    # finds numpy 2.5 via PYTHONPATH before its own conda numpy, causing numba
+    # to fail ("Numba needs NumPy 2.3 or less"). Strip nfc-env paths so
+    # halfpipe sees only its own conda environment.
+    env = os.environ.copy()
+    raw = env.get("PYTHONPATH", "")
+    if raw:
+        clean = ":".join(
+            p for p in raw.split(":") if p and "nfc-env" not in p and "/opt/conda/lib/python" not in p
+        )
+        if clean:
+            env["PYTHONPATH"] = clean
+        else:
+            env.pop("PYTHONPATH", None)
+    return env
+
+
 def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_directory: str) -> dict:
     """
     Run HALFpipe subject-level analysis and return QC summary.
@@ -96,9 +115,10 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
         cmd += ["--only-workflow"]
 
     logging.info(f"Running HALFpipe: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, env=_halfpipe_env())
 
     if result.returncode != 0:
+        logging.error(f"HALFpipe stdout:\n{result.stdout}")
         logging.error(f"HALFpipe stderr:\n{result.stderr}")
         raise RuntimeError(f"HALFpipe failed with return code {result.returncode}")
 

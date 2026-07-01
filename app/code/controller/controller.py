@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Callable, Optional
 
-from nvflare.apis.impl.controller import Controller, Task, ClientTask
+from nvflare.apis.impl.controller import Controller, Task
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.apis.shareable import Shareable

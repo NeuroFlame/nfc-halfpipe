@@ -9,15 +9,20 @@ def is_repo_root(path: str) -> bool:
 
 def find_repo_root_path() -> str:
     """Find the repository root directory by searching upward for 'system' and 'app' directories."""
-    path = os.getcwd()
+    # Try from cwd first, then fall back to the location of this file.
+    # The simulator changes cwd to a temp workspace, so the file-based search
+    # is needed when the process doesn't start from the project tree.
+    for start in (os.getcwd(), os.path.abspath(__file__)):
+        path = start
+        while True:
+            if is_repo_root(path):
+                return path
+            parent = os.path.dirname(path)
+            if parent == path:
+                break
+            path = parent
 
-    while not is_repo_root(path):
-        parent = os.path.dirname(path)
-        if parent == path:  # Reached filesystem root
-            raise FileNotFoundError("Repo root directory could not be found.")
-        path = parent
-
-    return path
+    raise FileNotFoundError("Repo root directory could not be found.")
 
 
 def get_data_directory_path(fl_ctx: FLContext) -> str:

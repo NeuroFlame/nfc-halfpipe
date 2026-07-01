@@ -78,7 +78,8 @@ class HALFpipeExecutor(Executor):
 
     def _handle_run_halfpipe(self, fl_ctx: FLContext) -> Shareable:
         output_dir = get_output_directory_path(fl_ctx)
-        halfpipe_workdir = os.path.join(output_dir, "halfpipe_workdir")
+        site_name = fl_ctx.get_prop(FLContextKey.CLIENT_NAME, "site")
+        halfpipe_workdir = os.path.join(output_dir, f"halfpipe_workdir_{site_name}")
 
         # In production, DATA_DIR is the BIDS root the user selected in the
         # NeuroFLAME UI. In simulation it resolves to test_data/siteN/.
