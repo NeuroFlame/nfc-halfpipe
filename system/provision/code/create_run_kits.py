@@ -29,12 +29,18 @@ def create_run_kits(
 
         logger.info(f'Found site directories: {site_directories}')
 
-        # Copy each site's startupKit to the runKits directory
+        # Copy each site's startupKit to the runKits directory and add parameters.json
         for site in site_directories:
             source_path = os.path.join(startup_kits_path, site)
             destination_path = os.path.join(output_directory, site)
             logger.info(f'Copying {source_path} to {destination_path}')
             copy_directory(source_path, destination_path)
+            # Write parameters.json so PARAMETERS_FILE_PATH env var resolves
+            # inside the edge container at /workspace/runKit/parameters.json
+            site_params_path = os.path.join(destination_path, 'parameters.json')
+            with open(site_params_path, 'w', encoding='utf-8') as f:
+                f.write(computation_parameters)
+            logger.info(f'Wrote computation parameters to {site_params_path}')
 
         # Create the central node runKit
         central_node_path = os.path.join(output_directory, 'centralNode')
