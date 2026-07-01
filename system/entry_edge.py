@@ -1,8 +1,16 @@
+import os
 import subprocess
 import time
 import psutil
 import sys
 
+# The edge client mounts the site's BIDS directory at /workspace/data and
+# the results directory at /workspace/output. Set these as env vars so that
+# get_data_directory_path() and get_output_directory_path() resolve correctly
+# inside the container. setdefault preserves any value already injected by
+# the container runtime.
+os.environ.setdefault("DATA_DIR", "/workspace/data")
+os.environ.setdefault("OUTPUT_DIR", "/workspace/output")
 
 print("Starting the shell script...")
 subprocess.Popen(["/bin/bash", "/workspace/runKit/startup/start.sh"])
