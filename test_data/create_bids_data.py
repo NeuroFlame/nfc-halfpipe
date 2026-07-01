@@ -1,12 +1,12 @@
 """
 Generate HALFpipe CI-style BIDS test datasets for test_data/siteN/.
 
-Mirrors the approach in HALFpipe/tests/create_mock_bids_dataset.py:
-- BOLD: 1×1×1×1 zeros; NIfTI header binary-patched to declare full-size scan
-  (dim=[4,80,80,37,200], pixdim=3mm×3mm×3.3mm×TR2s, qform/sform set)
-- T1w: 1×1×1 zeros with identity affine, no sidecar
-- BOLD JSON sidecar: {"EchoTime": 0.02762, "RepetitionTime": 0.75}
-- Subject IDs: 4-digit zero-padded (sub-0001, sub-0002, ...)
+Both BOLD and T1w start as 1×1×1(×1) zeros; NIfTI headers are binary-patched
+to declare realistic scan dimensions so that HALFpipe/fMRIPrep can build the
+Nipype workflow graph (workflow construction reads shape from the header).
+
+BOLD patch: dim=[4,80,80,37,200], 3mm×3mm×3.3mm, TR=2s
+T1w  patch: dim=[3,182,218,182], 1mm isotropic (MNI152 FOV), LAS orientation
 
 nibabel 5.x overrides dim/pixdim to match the actual numpy array shape during
 save. This script works around that by binary-patching the gzipped NIfTI header.
@@ -84,10 +84,32 @@ def _make_bold(path: Path) -> None:
     sidecar.write_text(json.dumps(BOLD_SIDECAR, indent=4))
 
 
+def _patch_anat_header(path: Path) -> None:
+    # Declare a 182×218×182 1mm isotropic MNI152-sized T1w (LAS orientation).
+    # Actual compressed data remains 1×1×1 zeros; only the header is patched.
+    with gzip.open(str(path), "rb") as f:
+        data = bytearray(f.read())
+    struct.pack_into("<8h", data, 40, 3, 182, 218, 182, 1, 1, 1, 1)
+    struct.pack_into("<8f", data, 76, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+    struct.pack_into("<B",  data, 123, 10)
+    struct.pack_into("<hh", data, 252, 1, 1)
+    struct.pack_into("<fff", data, 256, 0.0, 0.0, 0.0)
+    struct.pack_into("<fff", data, 268, -91.0, -126.0, -72.0)
+    struct.pack_into("<4f", data, 280, -1.0, 0.0, 0.0, 91.0)
+    struct.pack_into("<4f", data, 296,  0.0, 1.0, 0.0, -126.0)
+    struct.pack_into("<4f", data, 312,  0.0, 0.0, 1.0, -72.0)
+    with gzip.open(str(path), "wb") as f:
+        f.write(data)
+
+
 def _make_anat(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     img = nib.Nifti1Image(np.zeros((1, 1, 1), dtype=np.float32), affine=np.eye(4))
-    nib.save(img, str(path))
+    with tempfile.NamedTemporaryFile(suffix=".nii.gz", delete=False) as fh:
+        tmp = fh.name
+    nib.save(img, tmp)
+    shutil.move(tmp, str(path))
+    _patch_anat_header(path)
 
 
 def rebuild_site(site_name: str, n_subjects: int) -> None:

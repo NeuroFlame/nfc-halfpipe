@@ -1,0 +1,52 @@
+{
+  "_note": "Full HALFpipe execution. Requires: (1) real BIDS data (non-synthetic) at each site's DATA_DIR; (2) FreeSurfer license — mount at /workspace/license.txt inside the container, or set fs_license_path to its in-container path. ICA-AROMA disabled for reliable first run.",
+  "run_halfpipe": true,
+  "fs_license_path": "/workspace/license.txt",
+  "aggregation_types": ["qc_metadata", "roi_values"],
+  "halfpipe_spec": {
+    "files": [
+      {
+        "datatype": "func",
+        "suffix": "bold",
+        "tags": { "task": "rest" },
+        "path": "{bids_directory}/sub-{sub}/func/sub-{sub}_task-rest_bold.nii.gz"
+      },
+      {
+        "datatype": "anat",
+        "suffix": "T1w",
+        "tags": {},
+        "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_T1w.nii.gz"
+      }
+    ],
+    "settings": [
+      {
+        "name": "default",
+        "ica_aroma": false,
+        "bandpass_filter": { "type": "gaussian", "lp_width": 125.0 },
+        "smoothing": { "fwhm": 6.0 },
+        "grand_mean_scaling": { "mean": 10000.0 }
+      },
+      {
+        "name": "unfiltered",
+        "ica_aroma": false,
+        "grand_mean_scaling": { "mean": 10000.0 }
+      }
+    ],
+    "features": [
+      { "name": "reho",  "type": "reho",  "setting": "default", "smoothing": null },
+      { "name": "falff", "type": "falff", "setting": "default", "unfiltered_setting": "unfiltered" }
+    ],
+    "models": []
+  },
+  "roi_extraction": {
+    "_note": "Schaefer 2018 200-parcel 17-network atlas baked into the image (MNI152NLin2009cAsym 2mm, from templateflow).",
+    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz",
+    "features": ["reho", "falff"]
+  },
+  "voxelwise_maps": {
+    "spreadsheet": null,
+    "covariates": []
+  },
+  "min_subjects": 1,
+  "n_procs": 1
+}

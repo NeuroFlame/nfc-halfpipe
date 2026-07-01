@@ -1,0 +1,45 @@
+{
+  "_note": "Workflow-construction-only test. Uses synthetic BIDS data from test_data/siteN. No FreeSurfer license required; no fMRIPrep execution. HALFpipe builds the Nipype workflow graph then exits (--only-workflow). Validates BIDS parsing, halfpipe_spec, and workflow setup end-to-end without running fMRIPrep.",
+  "run_halfpipe": true,
+  "workflow_only": true,
+  "aggregation_types": ["qc_metadata"],
+  "halfpipe_spec": {
+    "files": [
+      {
+        "datatype": "func",
+        "suffix": "bold",
+        "tags": { "task": "rest" },
+        "path": "{bids_directory}/sub-{sub}/func/sub-{sub}_task-rest_bold.nii.gz"
+      },
+      {
+        "datatype": "anat",
+        "suffix": "T1w",
+        "tags": {},
+        "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_T1w.nii.gz"
+      }
+    ],
+    "settings": [
+      {
+        "name": "default",
+        "ica_aroma": false,
+        "bandpass_filter": { "type": "gaussian", "lp_width": 125.0 },
+        "smoothing": { "fwhm": 6.0 },
+        "grand_mean_scaling": { "mean": 10000.0 }
+      }
+    ],
+    "features": [
+      { "name": "reho", "type": "reho", "setting": "default", "smoothing": null }
+    ],
+    "models": []
+  },
+  "roi_extraction": {
+    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz",
+    "features": ["reho"]
+  },
+  "voxelwise_maps": {
+    "spreadsheet": null,
+    "covariates": []
+  },
+  "min_subjects": 1,
+  "n_procs": 1
+}

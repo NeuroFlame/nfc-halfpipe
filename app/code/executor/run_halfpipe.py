@@ -2,8 +2,11 @@ import json
 import logging
 import os
 import subprocess
-import tempfile
+from datetime import datetime
 from pathlib import Path
+
+_HALFPIPE_SCHEMA_VERSION = "3.0"
+_HALFPIPE_TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M"
 
 
 def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_directory: str) -> dict:
@@ -51,11 +54,32 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
         if "path" in file_entry:
             file_entry["path"] = file_entry["path"].replace("{bids_directory}", bids_directory)
 
+    # Promote to HALFpipe schema 3.0 (1.3.x).  Our internal halfpipe_spec uses
+    # a "version" key that is not part of the halfpipe schema; remove it and
+    # inject the required schema_version and timestamp.
+    spec.pop("version", None)
+    spec.setdefault("schema_version", _HALFPIPE_SCHEMA_VERSION)
+    spec.setdefault("timestamp", datetime.now().strftime(_HALFPIPE_TIMESTAMP_FORMAT))
+    spec.setdefault("models", [])
+    # An empty global_settings dict triggers GlobalSettingsSchema.@pre_load,
+    # which fills in all required defaults (slice_timing, run_fmriprep, etc.).
+    spec.setdefault("global_settings", {})
+
     os.makedirs(workdir, exist_ok=True)
     spec_path = os.path.join(workdir, "spec.json")
     with open(spec_path, "w") as f:
         json.dump(spec, f, indent=2)
     logging.info(f"Wrote HALFpipe spec to {spec_path}")
+
+    n_procs = params.get("n_procs", 1)
+    workflow_only = params.get("workflow_only", False)
+
+    # FreeSurfer license: check params, then env var, then well-known mount point.
+    fs_license = (
+        params.get("fs_license_path")
+        or os.environ.get("FS_LICENSE")
+        or ("/workspace/license.txt" if os.path.isfile("/workspace/license.txt") else None)
+    )
 
     cmd = [
         "halfpipe",
@@ -63,11 +87,13 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
         "--spec-path", spec_path,
         "--skip-spec-ui",
         "--nipype-run-plugin", "Simple",
+        "--nipype-n-procs", str(n_procs),
         "--verbose",
     ]
-
-    n_procs = params.get("n_procs", 1)
-    cmd += ["--nipype-n-procs", str(n_procs)]
+    if fs_license:
+        cmd += ["--fs-license-file", fs_license]
+    if workflow_only:
+        cmd += ["--only-workflow"]
 
     logging.info(f"Running HALFpipe: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -75,6 +101,10 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
     if result.returncode != 0:
         logging.error(f"HALFpipe stderr:\n{result.stderr}")
         raise RuntimeError(f"HALFpipe failed with return code {result.returncode}")
+
+    if workflow_only:
+        logging.info("HALFpipe workflow construction completed (--only-workflow; no derivatives produced)")
+        return {"status": "workflow_only", "n_subjects": 0, "qc_summary": {}, "derivatives_path": None}
 
     logging.info("HALFpipe completed successfully")
 

@@ -1,26 +1,48 @@
-FROM python:3.10-slim
+FROM --platform=linux/amd64 halfpipe/halfpipe:1.3.2
 
-# Upgrade pip and setuptools
-RUN python3 -m pip install -U pip
-RUN python3 -m pip install -U setuptools
-
-# Set working directory
+# ──────────────────────────────────────────────────────────────────────────────
+# 1. Create an isolated Python venv for NVFlare and our application code.
+#    HALFpipe ships a conda-based environment; the venv prevents conflicts.
+#    The halfpipe console-script shebang is an absolute path so PATH-shadowing
+#    the venv Python does not affect it.
+# ──────────────────────────────────────────────────────────────────────────────
 WORKDIR /workspace/
-
-# Copy the requirements.txt file
 COPY ./requirements.txt /workspace/requirements.txt
+RUN python3 -m venv /opt/nfc-env && \
+    /opt/nfc-env/bin/pip install --upgrade pip setuptools && \
+    /opt/nfc-env/bin/pip install -r /workspace/requirements.txt
 
-# Install dependencies from requirements.txt
-RUN python3 -m pip install -r /workspace/requirements.txt
+# ──────────────────────────────────────────────────────────────────────────────
+# 2. Download the Schaefer 2018 200-parcel 17-network atlas (MNI152NLin2009cAsym
+#    2 mm) using templateflow from the venv (installed above).
+#    Destination path must match roi_extraction.atlas_path in parameters.json.
+# ──────────────────────────────────────────────────────────────────────────────
+RUN mkdir -p /atlases && /opt/nfc-env/bin/python3 -c "\
+from pathlib import Path; \
+import shutil; \
+import templateflow.api as tf; \
+r = tf.get('MNI152NLin2009cAsym', atlas='Schaefer2018', desc='200Parcels17Networks', resolution='02', extension='.nii.gz'); \
+paths = [r] if isinstance(r, Path) else list(r); \
+shutil.copy(str(paths[0]), '/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz'); \
+print(f'Atlas installed from {paths[0]}')"
 
-# Copy the rest of the application files
+# ──────────────────────────────────────────────────────────────────────────────
+# 3. Application code
+# ──────────────────────────────────────────────────────────────────────────────
 COPY ./app/ /workspace/app/
 COPY ./system/entry_central.py /workspace/system/entry_central.py
 COPY ./system/entry_edge.py /workspace/system/entry_edge.py
 COPY ./system/provision/ /workspace/system/provision/
 COPY ./system/entry_provision.py /workspace/system/entry_provision.py
 
-# Set environment variables
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. Environment
+#    Override HALFpipe's entrypoint — NeuroFLAME specifies the command at runtime.
+#    PATH: venv Python is preferred so NVFlare packages resolve; halfpipe is
+#    unaffected (absolute-path shebang in its console-script wrapper).
+# ──────────────────────────────────────────────────────────────────────────────
+ENTRYPOINT []
+ENV PATH=/opt/nfc-env/bin:$PATH
 ENV PYTHONPATH=/workspace/app/code/
 ENV DATA_DIR=/workspace/data/
 ENV OUTPUT_DIR=/workspace/output/
