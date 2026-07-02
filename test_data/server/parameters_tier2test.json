@@ -3,7 +3,7 @@
   "run_halfpipe": true,
   "fs_license_path": "/workspace/license.txt",
   "subject_include": ["B04"],
-  "n_procs": 4,
+  "n_procs": 2,
   "halfpipe_spec": {
     "files": [
       {

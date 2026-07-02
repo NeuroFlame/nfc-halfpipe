@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import platform
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -61,6 +62,15 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
             "qc_summary": mock.get("qc_metadata", {}),
             "derivatives_path": None,
         }
+
+    if platform.machine() == "aarch64":
+        logging.warning(
+            "Running on linux/aarch64 without native FSL support. "
+            "fMRIPrep's FSL-dependent steps (BET, FAST) will fail. "
+            "Use the linux/amd64 image under Rosetta on Apple Silicon until "
+            "a native arm64 image with ANTs-only brain extraction is available. "
+            "See README — Platform Support."
+        )
 
     halfpipe_spec = params.get("halfpipe_spec")
     if halfpipe_spec is None:
@@ -143,30 +153,45 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
 
 def _extract_qc_from_derivatives(derivatives_path: str) -> dict:
     """
-    Parse HALFpipe-generated vals.json files to extract QC metrics.
+    Parse HALFpipe 1.3.x BIDS JSON sidecar files to extract QC metrics.
 
-    Returns a dict with n_subjects and per-subject motion stats averaged across subjects.
+    HALFpipe 1.3.x embeds QC stats (FDMean, FDPerc, MeanGMTSNR) directly in
+    the feature JSON sidecars (*_feature-*_*.json) using PascalCase keys.
+    We de-duplicate per subject (each subject's runs share the same FD values
+    across features) and average across subjects.
     """
     if not os.path.isdir(derivatives_path):
         logging.warning(f"Derivatives directory not found: {derivatives_path}")
         return {"n_subjects": 0}
 
-    fd_values = []
-    fd_perc_values = []
     subject_dirs = [
         d for d in Path(derivatives_path).iterdir()
         if d.is_dir() and d.name.startswith("sub-")
     ]
 
+    fd_values = []
+    fd_perc_values = []
+    tsnr_values = []
+
     for subject_dir in subject_dirs:
-        for vals_file in subject_dir.rglob("*vals.json"):
+        seen_runs = set()
+        for sidecar in subject_dir.rglob("*_feature-*_*.json"):
+            # Key on (task, run) so we only count each run's QC once per subject.
+            parts = sidecar.stem.split("_")
+            run_key = tuple(p for p in parts if p.startswith(("task-", "run-", "ses-")))
+            if run_key in seen_runs:
+                continue
             try:
-                with open(vals_file) as f:
+                with open(sidecar) as f:
                     vals = json.load(f)
-                if "fd_mean" in vals:
-                    fd_values.append(float(vals["fd_mean"]))
-                if "fd_perc" in vals:
-                    fd_perc_values.append(float(vals["fd_perc"]))
+                if "FDMean" not in vals:
+                    continue
+                seen_runs.add(run_key)
+                fd_values.append(float(vals["FDMean"]))
+                if "FDPerc" in vals:
+                    fd_perc_values.append(float(vals["FDPerc"]))
+                if "MeanGMTSNR" in vals:
+                    tsnr_values.append(float(vals["MeanGMTSNR"]))
             except (json.JSONDecodeError, KeyError, ValueError):
                 pass
 
@@ -175,5 +200,7 @@ def _extract_qc_from_derivatives(derivatives_path: str) -> dict:
         summary["mean_fd"] = round(sum(fd_values) / len(fd_values), 4)
     if fd_perc_values:
         summary["mean_fd_perc"] = round(sum(fd_perc_values) / len(fd_perc_values), 4)
+    if tsnr_values:
+        summary["mean_gm_tsnr"] = round(sum(tsnr_values) / len(tsnr_values), 4)
 
     return summary
