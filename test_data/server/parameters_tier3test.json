@@ -1,0 +1,17 @@
+{
+  "_note": "Tier 3 federated simulation. Site1 uses real halfpipe derivatives from the Tier 2 test run; sites 2 and 3 use mock data. Exercises the full NVFlare loop (QC aggregation + ROI extraction + global results) without re-running halfpipe.",
+  "run_halfpipe": false,
+  "aggregation_types": ["qc_metadata", "roi_values"],
+  "halfpipe_spec": {},
+  "roi_extraction": {
+    "_note": "Local templateflow cache path — matches the atlas baked into the prod Docker image.",
+    "atlas_path": "/Users/admin/.cache/templateflow/tpl-MNI152NLin2009cAsym/tpl-MNI152NLin2009cAsym_res-02_atlas-Schaefer2018_desc-200Parcels17Networks_dseg.nii.gz",
+    "features": ["reho", "falff"]
+  },
+  "voxelwise_maps": {
+    "spreadsheet": null,
+    "covariates": []
+  },
+  "min_subjects": 1,
+  "n_procs": 1
+}

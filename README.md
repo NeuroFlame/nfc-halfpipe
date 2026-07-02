@@ -121,7 +121,7 @@ nfc-halfpipe/
   "halfpipe_spec": { ... },
   "roi_extraction": {
     "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks.nii.gz",
-    "features": ["reho", "alff"]
+    "features": ["reho", "falff"]
   },
   "voxelwise_maps": {
     "spreadsheet": null,
@@ -142,7 +142,7 @@ nfc-halfpipe/
     "qc_metadata": { "mean_fd": 0.38, "mean_fd_perc": 8.2 },
     "roi_values": {
       "reho": { "parcel_001": 0.412, "parcel_002": 0.367 },
-      "alff": { "parcel_001": 0.621, "parcel_002": 0.587 }
+      "falff": { "parcel_001": 0.621, "parcel_002": 0.587 }
     },
     "voxelwise_stats": {}
   }
@@ -177,13 +177,13 @@ In `parameters.json`, set `"run_halfpipe": true` and provide a valid `halfpipe_s
     "settings": [ { "name": "default", "bandpass_filter": { ... } } ],
     "features": [
       { "name": "reho", "type": "reho", "setting": "default" },
-      { "name": "alff", "type": "alff", "setting": "default" }
+      { "name": "falff", "type": "falff", "setting": "default" }
     ],
     "models": []
   },
   "roi_extraction": {
     "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks.nii.gz",
-    "features": ["reho", "alff"]
+    "features": ["reho", "falff"]
   }
 }
 ```

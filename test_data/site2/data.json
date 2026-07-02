@@ -2,7 +2,7 @@
   "_note": "Site 2 — 9 subjects, moderate-to-high motion. Higher FD reduces apparent ReHo/ALFF through residual motion artifact.",
   "derivatives_directory": null,
   "mock_derivatives": {
-    "_note": "Used when run_halfpipe=false. Same 20-parcel Schaefer subset as site1. Values reflect slightly reduced ReHo/ALFF due to higher motion at this site.",
+    "_note": "Used when run_halfpipe=false. Same 20-parcel Schaefer subset as site1. Values reflect slightly reduced ReHo/fALFF due to higher motion at this site.",
     "n_subjects": 9,
     "qc_metadata": {
       "mean_fd": 0.41,
@@ -31,7 +31,7 @@
         "parcel_019": 0.364,
         "parcel_020": 0.399
       },
-      "alff": {
+      "falff": {
         "parcel_001": 0.597,
         "parcel_002": 0.584,
         "parcel_003": 0.591,
