@@ -42,18 +42,22 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
     """
     run_halfpipe = params.get("run_halfpipe", True)
 
+    # Per-site early exit: if a derivatives_directory is set and exists, skip
+    # halfpipe regardless of run_halfpipe. This lets a site contribute real
+    # results from a prior run without re-running the full pipeline.
+    derivatives_directory = site_data.get("derivatives_directory")
+    if derivatives_directory and os.path.isdir(str(derivatives_directory)):
+        logging.info(f"Using existing derivatives at {derivatives_directory}")
+        qc_summary = _extract_qc_from_derivatives(str(derivatives_directory))
+        n_subjects = qc_summary.pop("n_subjects", 0)
+        return {
+            "status": "skipped",
+            "n_subjects": n_subjects,
+            "qc_summary": qc_summary,
+            "derivatives_path": str(derivatives_directory),
+        }
+
     if not run_halfpipe:
-        derivatives_directory = site_data.get("derivatives_directory")
-        if derivatives_directory:
-            logging.info(f"Skipping HALFpipe; using existing derivatives at {derivatives_directory}")
-            qc_summary = _extract_qc_from_derivatives(derivatives_directory)
-            n_subjects = qc_summary.pop("n_subjects", 0)
-            return {
-                "status": "skipped",
-                "n_subjects": n_subjects,
-                "qc_summary": qc_summary,
-                "derivatives_path": derivatives_directory,
-            }
         logging.info("Skipping HALFpipe execution (run_halfpipe=false); using mock derivatives")
         mock = site_data.get("mock_derivatives", {})
         return {

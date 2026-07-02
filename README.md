@@ -196,6 +196,26 @@ Each site's data directory (configured in the NeuroFLAME UI) must be the BIDS ro
 
 Uncomment the `nibabel` line in `requirements.txt` or add it to the Dockerfile.
 
+**5. Run the simulation inside Docker**
+
+When running `debug.py` inside the production container, override `PYTHONPATH` so the NVFlare simulator loads code from your mounted repo rather than the image's baked-in `/workspace/app/code/`:
+
+```bash
+docker run --rm --platform linux/amd64 \
+  -v "$(pwd):/workspace/repo" \
+  -v "/path/to/bids:/workspace/data:ro" \
+  -v "$HOME/license.txt:/workspace/license.txt:ro" \
+  -v "/path/to/output:/workspace/output" \
+  -e "PYTHONPATH=/workspace/repo/app/code/" \
+  -e "PARAMETERS_FILE_PATH=/workspace/repo/test_data/server/parameters_tier4test.json" \
+  nfc-halfpipe:prod \
+  /opt/nfc-env/bin/python3 /workspace/repo/debug.py /workspace/repo/job \
+    -w /workspace/repo/simulator_workspace \
+    -c site1
+```
+
+The image bakes `DATA_DIR=/workspace/data/` and `OUTPUT_DIR=/workspace/output/` as defaults, so mount your BIDS root at `/workspace/data` and your output directory at `/workspace/output`. The `PYTHONPATH` override is required because the image ships with an older copy of the app code at `/workspace/app/code/` that takes precedence over NVFlare's job-staging paths without it.
+
 ---
 
 ## Task Flow

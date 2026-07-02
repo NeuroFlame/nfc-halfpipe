@@ -1,0 +1,53 @@
+{
+  "_note": "Tier 4 end-to-end test: real BIDS data (ds005073 sub-B04) + real HALFpipe + full NVFlare federation inside Docker. site1 runs halfpipe (nipype cache pre-seeded from Tier 2); sites 2+3 use the same Tier 2 derivatives via derivatives_directory. Requires: FreeSurfer license at /workspace/license.txt; BIDS root at /workspace/data; Tier 2 workdir at /workspace/workdir.",
+  "run_halfpipe": true,
+  "aggregation_types": ["qc_metadata", "roi_values"],
+  "fs_license_path": "/workspace/license.txt",
+  "subject_include": ["B04"],
+  "n_procs": 2,
+  "halfpipe_spec": {
+    "files": [
+      {
+        "datatype": "func",
+        "suffix": "bold",
+        "tags": { "task": "viscomp", "run": "1" },
+        "path": "{bids_directory}/sub-{sub}/func/sub-{sub}_task-viscomp_run-1_bold.nii.gz"
+      },
+      {
+        "datatype": "anat",
+        "suffix": "T1w",
+        "tags": {},
+        "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_rec-1_T1w.nii.gz"
+      }
+    ],
+    "settings": [
+      {
+        "name": "default",
+        "ica_aroma": false,
+        "bandpass_filter": { "type": "gaussian", "lp_width": 125.0 },
+        "smoothing": { "fwhm": 6.0 },
+        "grand_mean_scaling": { "mean": 10000.0 }
+      },
+      {
+        "name": "unfiltered",
+        "ica_aroma": false,
+        "grand_mean_scaling": { "mean": 10000.0 }
+      }
+    ],
+    "features": [
+      { "name": "reho",  "type": "reho",  "setting": "default", "smoothing": null },
+      { "name": "falff", "type": "falff", "setting": "default", "unfiltered_setting": "unfiltered", "smoothing": null }
+    ],
+    "models": []
+  },
+  "roi_extraction": {
+    "_note": "Schaefer 2018 200-parcel 17-network atlas baked into the image.",
+    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz",
+    "features": ["reho", "falff"]
+  },
+  "voxelwise_maps": {
+    "spreadsheet": null,
+    "covariates": []
+  },
+  "min_subjects": 1
+}

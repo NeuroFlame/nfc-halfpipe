@@ -1,5 +1,7 @@
 {
   "_note": "Site 1 — 12 subjects, low motion. The BIDS root is the data directory provided by the user in the NeuroFLAME UI (DATA_DIR). For simulation it resolves to test_data/site1/.",
+  "bids_directory": null,
+  "halfpipe_workdir": null,
   "derivatives_directory": null,
   "mock_derivatives": {
     "_note": "Used when run_halfpipe=false. Parcel labels (parcel_NNN) match integer IDs of the Schaefer 2018 200-parcel 17-network atlas. This mock uses 20 representative parcels spanning visual, somatomotor, attention, control, and default-mode networks.",
