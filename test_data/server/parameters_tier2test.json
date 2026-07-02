@@ -35,7 +35,7 @@
     ],
     "features": [
       { "name": "reho",  "type": "reho",  "setting": "default", "smoothing": null },
-      { "name": "falff", "type": "falff", "setting": "default", "unfiltered_setting": "unfiltered" }
+      { "name": "falff", "type": "falff", "setting": "default", "unfiltered_setting": "unfiltered", "smoothing": null }
     ],
     "models": []
   },
