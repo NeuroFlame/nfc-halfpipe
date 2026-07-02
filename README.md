@@ -12,6 +12,33 @@ Three aggregation modes are supported (and can be combined):
 
 ---
 
+## Platform Support
+
+NeuroFLAME is designed to run on desktops, laptops, and HPC clusters. The Docker image must be available for the host architecture.
+
+| Platform | Architecture | Status |
+|---|---|---|
+| Linux (HPC / cloud / workstation) | amd64 | ✅ Fully supported |
+| Windows (via WSL2) | amd64 | ✅ Fully supported |
+| Intel Mac | amd64 | ✅ Fully supported |
+| Apple Silicon Mac | arm64 | ⚠️ Runs under Rosetta (see below) |
+
+### Apple Silicon (arm64) — known limitation
+
+Docker on Apple Silicon runs Linux containers. fMRIPrep depends on FSL (BET for BOLD brain extraction, FAST for tissue segmentation), and FSL does not currently publish `linux/aarch64` binaries. Until it does, the production image (`linux/amd64`) must be used with Rosetta emulation on Apple Silicon:
+
+```bash
+docker pull --platform linux/amd64 nfc-halfpipe:prod
+```
+
+This works but is **3–5× slower** than native execution due to Rosetta's x86 JIT overhead. For a single subject, expect 4–6 hours vs ~1.5 hours natively.
+
+**Planned fix:** configure fMRIPrep to use ANTs for all brain-extraction and registration steps (`--skull-strip-template` and related flags), eliminating the FSL dependency. Once validated, a native `linux/arm64` image will be published alongside the amd64 image as a multi-arch manifest so `docker pull` selects the right image automatically.
+
+**Tracking:** FSL `linux/aarch64` support — monitor [FSL GitHub](https://github.com/Washington-University/FSLInstaller) for an official arm64 release.
+
+---
+
 ## Quick Start (Simulation with Mock Data)
 
 No fMRI data or HALFpipe installation required — the test data uses pre-computed mock derivatives.

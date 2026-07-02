@@ -1,25 +1,117 @@
-# Base image: use HALFpipe's Docker image so halfpipe, fmriprep, FSL, etc. are available.
-# For development/simulation without actual fMRI data (run_halfpipe=false), a lighter
-# Python image is sufficient — swap the FROM line accordingly.
+# Dockerfile-dev — native linux/arm64 image for development on Apple Silicon.
 #
-# Production (with HALFpipe):
-#   FROM ghcr.io/halfpipe/halfpipe:latest
+# Production uses Dockerfile-prod (linux/amd64, based on halfpipe/halfpipe:1.3.2).
+# This image targets local dev only: no Rosetta emulation, faster iteration.
 #
-# Development / simulation (mock data only):
-FROM python:3.8-buster
+#   Build:  docker build -t nfc-halfpipe:dev -f Dockerfile-dev .
+#           (first build ~40-60 min — ANTs compiles from source; subsequent
+#           builds are fast because the ANTs layer is cached)
+#   Run:    docker run --rm nfc-halfpipe:dev ...   (no --platform flag needed)
+#
+# ── Design notes ─────────────────────────────────────────────────────────────
+# halfpipe 1.3.2 is pure Python (zero compiled .so extensions), so its source
+# tree copies cleanly from the amd64 image into any Python 3.13 arm64 env.
+#
+# ANTs 2.6.0 is not available as a pre-built arm64 Linux binary.
+# We compile it from source (stage 2) using a cmake + ninja build.
+# The final image copies only the installed /opt/ants tree.
+#
+# FSL is not yet available for linux-aarch64. fMRIPrep 25.x calls FAST for
+# tissue segmentation; that step will fail if FSL is absent. All other steps
+# (brain extraction via ANTs, registration, BOLD preprocessing, reho/falff)
+# work without FSL.  Add FSL if/when it gains arm64 conda/apt packages.
+#
+# antspyx (PyPI) bundles pre-built ANTs, but only for Linux x86_64, not
+# aarch64 — hence the source build below.
 
-RUN python3 -m pip install -U pip setuptools
+# ── Stage 1: halfpipe Python source (from the official amd64 image) ──────────
+FROM --platform=linux/amd64 halfpipe/halfpipe:1.3.2 AS halfpipe-src
+
+# ── Stage 2: build ANTs 2.6.0 for arm64 ─────────────────────────────────────
+FROM --platform=linux/arm64 ubuntu:22.04 AS ants-builder
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    build-essential cmake ninja-build git \
+    zlib1g-dev libbz2-dev libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ANTs uses cmake ExternalProject to pull ITK; the full build takes ~40 min.
+ARG ANTS_VERSION=2.6.0
+RUN git clone --depth 1 --branch v${ANTS_VERSION} \
+      https://github.com/ANTsX/ANTs.git /ants-src && \
+    cmake -B /ants-src/build -S /ants-src \
+      -GNinja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DITK_BUILD_MINIMALEXTENSIONS=ON \
+      -DANTS_BUILD_WITH_CCACHE=OFF && \
+    cmake --build /ants-src/build --parallel $(nproc) && \
+    cmake --install /ants-src/build --prefix /opt/ants && \
+    rm -rf /ants-src
+
+# ── Stage 3: native arm64 runtime ────────────────────────────────────────────
+FROM --platform=linux/arm64 condaforge/miniforge3:latest
 
 WORKDIR /workspace/
 
+# ── 1. Python 3.13 + fMRIPrep stack ─────────────────────────────────────────
+# miniforge3:latest ships Python 3.13 — all packages below have aarch64 wheels
+# or are pure Python.  traits is a C-extension; use conda-forge aarch64 build.
+RUN conda install -n base -c conda-forge traits -y && \
+    pip install --no-cache-dir \
+      "fmriprep==25.2.3" \
+      "nibabel==5.3.2" \
+      "nilearn==0.13.0" \
+      "nipype==1.10.0" \
+      "niworkflows==1.14.2" \
+      "pybids==0.21.0" \
+      "sdcflows==2.15.0" \
+      "smriprep==0.19.2" \
+      "templateflow==25.1.1"
+
+# ── 2. ANTs binaries from builder stage ──────────────────────────────────────
+COPY --from=ants-builder /opt/ants /opt/ants
+
+# ── 3. halfpipe (pure Python) from the amd64 stage ───────────────────────────
+COPY --from=halfpipe-src \
+  /opt/conda/envs/fmriprep/lib/python3.12/site-packages/halfpipe \
+  /opt/conda/lib/python3.13/site-packages/halfpipe
+COPY --from=halfpipe-src \
+  /opt/conda/envs/fmriprep/lib/python3.12/site-packages/halfpipe-1.3.2.dist-info \
+  /opt/conda/lib/python3.13/site-packages/halfpipe-1.3.2.dist-info
+
+# Entry-point script: same polyglot style as original, pointing to arm64 Python.
+RUN printf '#!/bin/sh\n'"'"'exec'"'"' /opt/conda/bin/python "$0" "$@"\n'"'"' '"'"'\nimport sys\nfrom halfpipe.cli.run import main\nmain()\n' \
+    > /opt/conda/bin/halfpipe && chmod +x /opt/conda/bin/halfpipe
+
+# ── 4. NVFlare venv (isolated from conda neuroimaging env) ───────────────────
 COPY ./requirements.txt /workspace/requirements.txt
-RUN python3 -m pip install -r /workspace/requirements.txt
+RUN python3 -m venv /opt/nfc-env && \
+    /opt/nfc-env/bin/pip install --upgrade pip setuptools && \
+    /opt/nfc-env/bin/pip install -r /workspace/requirements.txt
 
-# nibabel is optional: needed for real NIfTI-based ROI extraction and voxelwise aggregation.
-# Uncomment if your sites will run real HALFpipe pipelines:
-# RUN python3 -m pip install nibabel>=5.0.0
+# ── 5. Schaefer 2018 200-parcel 17-network atlas ─────────────────────────────
+RUN mkdir -p /atlases && /opt/nfc-env/bin/python3 -c "\
+from pathlib import Path; \
+import shutil; \
+import templateflow.api as tf; \
+r = tf.get('MNI152NLin2009cAsym', atlas='Schaefer2018', desc='200Parcels17Networks', resolution='02', extension='.nii.gz'); \
+paths = [r] if isinstance(r, Path) else list(r); \
+shutil.copy(str(paths[0]), '/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz'); \
+print(f'Atlas installed from {paths[0]}')"
 
+# ── 6. Application code ───────────────────────────────────────────────────────
+COPY ./app/ /workspace/app/
+COPY ./system/entry_central.py /workspace/system/entry_central.py
+COPY ./system/entry_edge.py /workspace/system/entry_edge.py
+COPY ./system/provision/ /workspace/system/provision/
+COPY ./system/entry_provision.py /workspace/system/entry_provision.py
+
+# ── 7. Environment ────────────────────────────────────────────────────────────
+# nfc-env first (NVFlare), then conda (halfpipe), then ANTs.
+ENTRYPOINT []
+ENV PATH=/opt/nfc-env/bin:/opt/conda/bin:/opt/ants/bin:$PATH
 ENV PYTHONPATH=/workspace/app/code/
-ENV NVFLARE_POC_WORKSPACE=/workspace/poc-workspace
-
-CMD ["/bin/bash"]
+ENV DATA_DIR=/workspace/data/
+ENV OUTPUT_DIR=/workspace/output/
+ENV PARAMETERS_FILE_PATH=/workspace/runKit/parameters.json
