@@ -57,15 +57,18 @@ def extract_roi_values(
     roi_values: dict = {}
 
     for feature in features:
-        feature_dir = Path(derivatives_path) / feature
-        if not feature_dir.is_dir():
-            logging.warning(f"Feature directory not found: {feature_dir}")
-            continue
-
-        # HALFpipe names feature maps with BIDS-style suffixes; collect all NIfTI files
-        nifti_files = list(feature_dir.rglob("*.nii.gz")) + list(feature_dir.rglob("*.nii"))
+        # HALFpipe 1.3.x writes feature maps as BIDS sidecars under sub-*/func/:
+        #   *_feature-{feature}_{feature}.nii.gz  (or .nii)
+        # The feature name appears as both the BIDS 'feature' entity and the suffix,
+        # which distinguishes the primary map from masks (*_mask.nii.gz) and
+        # companion maps (e.g. alff.nii.gz produced alongside falff).
+        root = Path(derivatives_path)
+        nifti_files = (
+            list(root.rglob(f"*_feature-{feature}_{feature}.nii.gz")) +
+            list(root.rglob(f"*_feature-{feature}_{feature}.nii"))
+        )
         if not nifti_files:
-            logging.warning(f"No NIfTI files found in {feature_dir}")
+            logging.warning(f"No NIfTI maps found for feature '{feature}' under {derivatives_path}")
             continue
 
         # Accumulate parcellated values across subjects
