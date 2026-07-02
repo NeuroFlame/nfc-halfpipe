@@ -1,0 +1,52 @@
+{
+  "_note": "Tier 2 full-pipeline test against ds005073-1.0.0 (viscomp task). Processes sub-B04 run-1 only. T1w uses rec-1 reconstruction. reho/falff computed on task BOLD — results not scientifically meaningful but exercise the full fMRIPrep → feature → QC path. Requires: FreeSurfer license at /workspace/license.txt; BIDS root at /workspace/data.",
+  "run_halfpipe": true,
+  "fs_license_path": "/workspace/license.txt",
+  "subject_include": ["B04"],
+  "n_procs": 4,
+  "halfpipe_spec": {
+    "files": [
+      {
+        "datatype": "func",
+        "suffix": "bold",
+        "tags": { "task": "viscomp", "run": "1" },
+        "path": "{bids_directory}/sub-{sub}/func/sub-{sub}_task-viscomp_run-1_bold.nii.gz"
+      },
+      {
+        "datatype": "anat",
+        "suffix": "T1w",
+        "tags": {},
+        "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_rec-1_T1w.nii.gz"
+      }
+    ],
+    "settings": [
+      {
+        "name": "default",
+        "ica_aroma": false,
+        "bandpass_filter": { "type": "gaussian", "lp_width": 125.0 },
+        "smoothing": { "fwhm": 6.0 },
+        "grand_mean_scaling": { "mean": 10000.0 }
+      },
+      {
+        "name": "unfiltered",
+        "ica_aroma": false,
+        "grand_mean_scaling": { "mean": 10000.0 }
+      }
+    ],
+    "features": [
+      { "name": "reho",  "type": "reho",  "setting": "default", "smoothing": null },
+      { "name": "falff", "type": "falff", "setting": "default", "unfiltered_setting": "unfiltered" }
+    ],
+    "models": []
+  },
+  "roi_extraction": {
+    "_note": "Schaefer 2018 200-parcel 17-network atlas baked into the image.",
+    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz",
+    "features": ["reho", "falff"]
+  },
+  "voxelwise_maps": {
+    "spreadsheet": null,
+    "covariates": []
+  },
+  "min_subjects": 1
+}

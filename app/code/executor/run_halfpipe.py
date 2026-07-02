@@ -113,6 +113,8 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
         cmd += ["--fs-license-file", fs_license]
     if workflow_only:
         cmd += ["--only-workflow"]
+    for sub in params.get("subject_include", []):
+        cmd += ["--subject-include", sub]
 
     logging.info(f"Running HALFpipe: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True, env=_halfpipe_env())
