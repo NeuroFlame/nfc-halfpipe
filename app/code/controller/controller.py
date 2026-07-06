@@ -75,8 +75,8 @@ class HALFpipeController(Controller):
             abort_signal=abort_signal,
         )
 
-        # Phase 2a: Collect parcellated ROI values
-        if "roi_values" in aggregation_types:
+        # Phase 2a: Collect parcellated ROI values and/or write per-subject CSVs
+        if "roi_values" in aggregation_types or "subject_csv" in aggregation_types:
             logging.info("Phase 2a: Collecting ROI values from all sites")
             self._broadcast_task(
                 task_name=TASK_SEND_ROI_VALUES,

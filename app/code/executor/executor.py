@@ -15,7 +15,7 @@ from _utils.utils import (
 )
 from .run_halfpipe import run_halfpipe_and_get_qc
 from .extract_qc_metadata import extract_qc_metadata
-from .extract_roi_values import extract_roi_values
+from .extract_roi_values import extract_roi_values, write_subject_roi_csv
 from .run_site_group_level import run_site_group_level
 from .generate_report import generate_html_report
 
@@ -117,17 +117,31 @@ class HALFpipeExecutor(Executor):
         if self._halfpipe_result is None:
             raise RuntimeError("RUN_HALFPIPE must complete before SEND_ROI_VALUES")
 
-        roi_values = extract_roi_values(
-            derivatives_path=self._halfpipe_result.get("derivatives_path"),
-            site_data=self._site_data,
-            params=self._params,
-        )
+        aggregation_types = self._params.get("aggregation_types", [])
+        if isinstance(aggregation_types, str):
+            aggregation_types = [aggregation_types]
 
-        payload = {
-            "roi_values": roi_values,
-            "n_subjects": self._halfpipe_result.get("n_subjects", 0),
-        }
-        _save_json(payload, "roi_values.json", fl_ctx)
+        derivatives_path = self._halfpipe_result.get("derivatives_path")
+        output_dir = get_output_directory_path(fl_ctx)
+
+        payload = {"n_subjects": self._halfpipe_result.get("n_subjects", 0)}
+
+        if "roi_values" in aggregation_types:
+            roi_values = extract_roi_values(
+                derivatives_path=derivatives_path,
+                site_data=self._site_data,
+                params=self._params,
+            )
+            payload["roi_values"] = roi_values
+            _save_json(payload, "roi_values.json", fl_ctx)
+
+        if "subject_csv" in aggregation_types:
+            write_subject_roi_csv(
+                derivatives_path=derivatives_path,
+                site_data=self._site_data,
+                params=self._params,
+                output_dir=output_dir,
+            )
 
         result = Shareable()
         result["result"] = payload
