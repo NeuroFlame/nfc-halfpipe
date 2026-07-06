@@ -1,4 +1,5 @@
 import csv
+import json
 import logging
 import os
 import re
@@ -105,9 +106,10 @@ def write_subject_roi_csv(
     site_data: dict,
     params: dict,
     output_dir: str,
+    bids_directory: Optional[str] = None,
 ) -> dict:
     """
-    Write per-subject parcel values and a covariate template for nfc-combatdc.
+    Write per-subject parcel values and a covariate file for nfc-combatdc.
 
     Produces two files in output_dir:
 
@@ -118,9 +120,13 @@ def write_subject_roi_csv(
         casts every column to float.
 
     Covariate.csv (configurable via subject_csv_config.covariate_file):
-        One row per subject with a subject_id column that aligns row-for-row
-        with Data.csv. The site administrator adds demographic columns (age,
-        sex, diagnosis, etc.) to this file before pointing nfc-combatdc at it.
+        One row per subject, row-aligned with Data.csv. Populated from:
+          1. BIDS participants.tsv at {bids_directory}/participants.tsv
+             (all columns except participant_id, which becomes subject_id)
+          2. Per-subject HALFpipe QC metrics from feature JSON sidecars
+             (mean_fd, mean_fd_perc, mean_gm_tsnr)
+        In mock mode or when bids_directory is absent, contains only a
+        subject_id column as a template for the site administrator.
 
     Set nfc-combatdc's parameters.json:
         "data_file": "Data.csv"
@@ -191,7 +197,7 @@ def write_subject_roi_csv(
     subject_order = sorted(subject_rows.keys())
 
     # Column order: all features × all parcels in requested feature order
-    columns = [
+    data_columns = [
         f"{feature}_parcel_{p:03d}"
         for feature in features
         for p in parcel_ids
@@ -200,32 +206,153 @@ def write_subject_roi_csv(
 
     os.makedirs(output_dir, exist_ok=True)
 
+    # --- Data.csv (all-numeric, no subject_id) ---
     data_path = os.path.join(output_dir, data_filename)
     with open(data_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore", restval="")
+        writer = csv.DictWriter(f, fieldnames=data_columns, extrasaction="ignore", restval="")
         writer.writeheader()
         for subject_id in subject_order:
             writer.writerow(subject_rows[subject_id])
 
+    # --- Covariate.csv (subject_id + demographics + QC) ---
+    covariate_rows, covariate_columns = _build_covariate_rows(
+        subject_order=subject_order,
+        bids_directory=bids_directory,
+        derivatives_path=derivatives_path,
+    )
     covariate_path = os.path.join(output_dir, covariate_filename)
     with open(covariate_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["subject_id"])
+        writer = csv.DictWriter(f, fieldnames=covariate_columns, extrasaction="ignore", restval="")
         writer.writeheader()
-        for subject_id in subject_order:
-            writer.writerow({"subject_id": f"sub-{subject_id}"})
+        for row in covariate_rows:
+            writer.writerow(row)
 
     logging.info(
-        f"Data.csv written: {len(subject_order)} subjects × {len(columns)} columns → {data_path}"
+        f"Data.csv written: {len(subject_order)} subjects × {len(data_columns)} columns → {data_path}"
     )
     logging.info(
-        f"Covariate.csv written: {len(subject_order)} subjects (add demographic columns) → {covariate_path}"
+        f"Covariate.csv written: {len(subject_order)} subjects × {len(covariate_columns)} columns → {covariate_path}"
     )
     return {
         "data_path": data_path,
         "covariate_path": covariate_path,
         "n_subjects": len(subject_order),
-        "n_columns": len(columns),
+        "n_columns": len(data_columns),
     }
+
+
+def _build_covariate_rows(
+    subject_order: list,
+    bids_directory: Optional[str],
+    derivatives_path: Optional[str],
+) -> tuple:
+    """
+    Build covariate rows by joining participants.tsv and per-subject QC metrics.
+
+    Returns (rows, columns) where rows is a list of dicts aligned with
+    subject_order and columns is the ordered list of fieldnames.
+    """
+    # Base: subject_id for each subject
+    rows = {sub: {"subject_id": f"sub-{sub}"} for sub in subject_order}
+
+    # Track column order: subject_id first, then participants.tsv cols, then QC
+    participants_cols: list = []
+    qc_cols: list = []
+
+    # 1. participants.tsv — BIDS standard demographic file
+    if bids_directory:
+        ptsp = os.path.join(bids_directory, "participants.tsv")
+        if os.path.exists(ptsp):
+            try:
+                with open(ptsp, newline="") as f:
+                    reader = csv.DictReader(f, delimiter="\t")
+                    if reader.fieldnames:
+                        participants_cols = [
+                            col for col in reader.fieldnames
+                            if col != "participant_id"
+                        ]
+                    for record in reader:
+                        pid = record.get("participant_id", "")
+                        # participant_id is "sub-B04"; strip prefix to get bare ID
+                        sub = pid[4:] if pid.startswith("sub-") else pid
+                        if sub in rows:
+                            for col in participants_cols:
+                                rows[sub][col] = record.get(col, "")
+                logging.info(
+                    f"Merged {len(participants_cols)} columns from participants.tsv"
+                )
+            except Exception as e:
+                logging.warning(f"Could not read participants.tsv: {e}")
+
+    # 2. Per-subject QC from HALFpipe feature JSON sidecars
+    if derivatives_path:
+        qc_per_sub = _extract_per_subject_qc(derivatives_path)
+        for sub, qc in qc_per_sub.items():
+            if sub in rows:
+                rows[sub].update(qc)
+        if qc_per_sub:
+            # Collect QC column names from whichever subject had data
+            seen = set()
+            for qc in qc_per_sub.values():
+                for k in qc:
+                    if k not in seen:
+                        qc_cols.append(k)
+                        seen.add(k)
+            logging.info(f"Merged per-subject QC columns: {qc_cols}")
+
+    all_columns = ["subject_id"] + participants_cols + qc_cols
+    return [rows[sub] for sub in subject_order], all_columns
+
+
+def _extract_per_subject_qc(derivatives_path: str) -> dict:
+    """
+    Return {bare_subject_id: {"mean_fd": ..., "mean_fd_perc": ..., "mean_gm_tsnr": ...}}
+    by reading HALFpipe 1.3.x feature JSON sidecars for each subject directory.
+    Mirrors the logic in run_halfpipe._extract_qc_from_derivatives but per-subject.
+    """
+    result: dict = {}
+    if not os.path.isdir(derivatives_path):
+        return result
+
+    for subject_dir in Path(derivatives_path).iterdir():
+        if not subject_dir.is_dir() or not subject_dir.name.startswith("sub-"):
+            continue
+        subject_id = subject_dir.name[4:]  # strip "sub-"
+
+        fd_vals, fd_perc_vals, tsnr_vals = [], [], []
+        seen_runs: set = set()
+
+        for sidecar in subject_dir.rglob("*_feature-*_*.json"):
+            parts = sidecar.stem.split("_")
+            run_key = tuple(p for p in parts if p.startswith(("task-", "run-", "ses-")))
+            if run_key in seen_runs:
+                continue
+            try:
+                with open(sidecar) as f:
+                    vals = json.load(f)
+                if "FDMean" not in vals:
+                    continue
+                seen_runs.add(run_key)
+                fd_vals.append(float(vals["FDMean"]))
+                if "FDPerc" in vals:
+                    fd_perc_vals.append(float(vals["FDPerc"]))
+                if "MeanGMTSNR" in vals:
+                    tsnr_vals.append(float(vals["MeanGMTSNR"]))
+            except (json.JSONDecodeError, KeyError, ValueError):
+                pass
+
+        sub_qc: dict = {}
+        if fd_vals:
+            sub_qc["mean_fd"] = round(sum(fd_vals) / len(fd_vals), 4)
+        if fd_perc_vals:
+            sub_qc["mean_fd_perc"] = round(sum(fd_perc_vals) / len(fd_perc_vals), 4)
+        if tsnr_vals:
+            sub_qc["mean_gm_tsnr"] = round(sum(tsnr_vals) / len(tsnr_vals), 4)
+
+        if sub_qc:
+            result[subject_id] = sub_qc
+
+    return result
 
 
 def _write_mock_subject_csvs(
@@ -266,6 +393,7 @@ def _write_mock_subject_csvs(
         for _ in subject_ids:
             writer.writerow(row_template)
 
+    # Mock Covariate.csv: subject_id only — no real demographics available
     covariate_path = os.path.join(output_dir, covariate_filename)
     with open(covariate_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["subject_id"])
@@ -277,7 +405,7 @@ def _write_mock_subject_csvs(
         f"Mock Data.csv written: {n_subjects} subjects × {len(columns)} columns → {data_path}"
     )
     logging.info(
-        f"Mock Covariate.csv written: {n_subjects} subjects → {covariate_path}"
+        f"Mock Covariate.csv written: {n_subjects} subjects (subject_id only — no real demographics in mock mode) → {covariate_path}"
     )
     return {
         "data_path": data_path,

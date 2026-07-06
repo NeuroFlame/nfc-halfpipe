@@ -136,11 +136,16 @@ class HALFpipeExecutor(Executor):
             _save_json(payload, "roi_values.json", fl_ctx)
 
         if "subject_csv" in aggregation_types:
+            bids_directory = (
+                self._site_data.get("bids_directory")
+                or get_data_directory_path(fl_ctx)
+            )
             write_subject_roi_csv(
                 derivatives_path=derivatives_path,
                 site_data=self._site_data,
                 params=self._params,
                 output_dir=output_dir,
+                bids_directory=bids_directory,
             )
 
         result = Shareable()
