@@ -1,5 +1,5 @@
 {
-  "_note": "Tier 4 end-to-end test: real BIDS data (ds005073 sub-B04) + real HALFpipe + full NVFlare federation inside Docker. site1 runs halfpipe (nipype cache pre-seeded from Tier 2); sites 2+3 use the same Tier 2 derivatives via derivatives_directory. Requires: FreeSurfer license at /workspace/license.txt; BIDS root at /workspace/data; Tier 2 workdir at /workspace/workdir.",
+  "_note": "Tier 4 end-to-end test: real BIDS data (ds005073 sub-B04) + real HALFpipe + full NVFlare federation inside Docker. Includes AP/PA EPI fieldmaps for TOPUP-based SDC. site1 runs halfpipe; sites 2+3 use mock data. Requires: FreeSurfer license at /workspace/license.txt; BIDS root at /workspace/data.",
   "run_halfpipe": true,
   "aggregation_types": ["qc_metadata", "roi_values"],
   "fs_license_path": "/workspace/license.txt",
@@ -18,6 +18,18 @@
         "suffix": "T1w",
         "tags": {},
         "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_rec-1_T1w.nii.gz"
+      },
+      {
+        "datatype": "fmap",
+        "suffix": "epi",
+        "tags": { "dir": "AP", "run": "1" },
+        "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-AP_run-1_epi.nii.gz"
+      },
+      {
+        "datatype": "fmap",
+        "suffix": "epi",
+        "tags": { "dir": "PA", "run": "1" },
+        "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-PA_run-1_epi.nii.gz"
       }
     ],
     "settings": [

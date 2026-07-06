@@ -1,5 +1,5 @@
 {
-  "_note": "Tier 2 full-pipeline test against ds005073-1.0.0 (viscomp task). Processes sub-B04 run-1 only. T1w uses rec-1 reconstruction. reho/falff computed on task BOLD — results not scientifically meaningful but exercise the full fMRIPrep → feature → QC path. Requires: FreeSurfer license at /workspace/license.txt; BIDS root at /workspace/data.",
+  "_note": "Tier 2 full-pipeline test against ds005073-1.0.0 (viscomp task). Processes sub-B04 run-1 only. T1w uses rec-1 reconstruction. AP/PA EPI fieldmaps included (TOPUP-based SDC). Slice timing correction from BOLD JSON sidecar. reho/falff computed on task BOLD — results not scientifically meaningful but exercise the full fMRIPrep → SDC → feature → QC path. Requires: FreeSurfer license at /workspace/license.txt; BIDS root at /workspace/data.",
   "run_halfpipe": true,
   "fs_license_path": "/workspace/license.txt",
   "subject_include": ["B04"],
@@ -17,6 +17,18 @@
         "suffix": "T1w",
         "tags": {},
         "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_rec-1_T1w.nii.gz"
+      },
+      {
+        "datatype": "fmap",
+        "suffix": "epi",
+        "tags": { "dir": "AP", "run": "1" },
+        "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-AP_run-1_epi.nii.gz"
+      },
+      {
+        "datatype": "fmap",
+        "suffix": "epi",
+        "tags": { "dir": "PA", "run": "1" },
+        "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-PA_run-1_epi.nii.gz"
       }
     ],
     "settings": [
