@@ -107,33 +107,43 @@ def write_subject_roi_csv(
     output_dir: str,
 ) -> dict:
     """
-    Write per-subject parcel values to a CSV compatible with nfc-combatdc.
+    Write per-subject parcel values and a covariate template for nfc-combatdc.
 
-    Each row is one subject; columns are {feature}_{parcel_label} for every
-    feature × parcel combination. No subject_id column — nfc-combatdc expects
-    an all-numeric data matrix (pd.read_csv with all columns cast to float).
+    Produces two files in output_dir:
 
-    The output filename is configurable via params["subject_csv_config"]["data_file"];
-    defaults to "subject_data.csv". Set nfc-combatdc's "data_file" parameter to
-    this same filename so it reads the file nfc-halfpipe produces.
+    Data.csv (configurable via subject_csv_config.data_file):
+        All-numeric matrix — one row per subject, columns are
+        {feature}_{parcel_label} for every feature × parcel combination.
+        No subject_id column; nfc-combatdc reads this with pd.read_csv and
+        casts every column to float.
 
-    Returns: {"path": str, "n_subjects": int, "n_columns": int}
+    Covariate.csv (configurable via subject_csv_config.covariate_file):
+        One row per subject with a subject_id column that aligns row-for-row
+        with Data.csv. The site administrator adds demographic columns (age,
+        sex, diagnosis, etc.) to this file before pointing nfc-combatdc at it.
+
+    Set nfc-combatdc's parameters.json:
+        "data_file": "Data.csv"
+        "covariate_file": "Covariate.csv"
+
+    Returns: {"data_path": str, "covariate_path": str, "n_subjects": int, "n_columns": int}
     """
     csv_config = params.get("subject_csv_config", {})
-    data_filename = csv_config.get("data_file", "subject_data.csv")
+    data_filename = csv_config.get("data_file", "Data.csv")
+    covariate_filename = csv_config.get("covariate_file", "Covariate.csv")
     features = csv_config.get("features") or params.get("roi_extraction", {}).get("features", [])
 
     if not features:
         logging.warning("No features configured for subject_csv — skipping CSV write")
-        return {"path": None, "n_subjects": 0, "n_columns": 0}
+        return {"data_path": None, "covariate_path": None, "n_subjects": 0, "n_columns": 0}
 
     if derivatives_path is None:
-        return _write_mock_subject_csv(site_data, features, output_dir, data_filename)
+        return _write_mock_subject_csvs(site_data, features, output_dir, data_filename, covariate_filename)
 
     atlas_path = params.get("roi_extraction", {}).get("atlas_path")
     if not atlas_path:
-        logging.warning("No atlas_path in roi_extraction — cannot write subject CSV")
-        return {"path": None, "n_subjects": 0, "n_columns": 0}
+        logging.warning("No atlas_path in roi_extraction — cannot write subject CSVs")
+        return {"data_path": None, "covariate_path": None, "n_subjects": 0, "n_columns": 0}
 
     try:
         import nibabel as nib
@@ -174,10 +184,13 @@ def write_subject_roi_csv(
                 logging.warning(f"Could not process {nifti_path}: {e}")
 
     if not subject_rows:
-        logging.warning("No subject data extracted — subject CSV not written")
-        return {"path": None, "n_subjects": 0, "n_columns": 0}
+        logging.warning("No subject data extracted — subject CSVs not written")
+        return {"data_path": None, "covariate_path": None, "n_subjects": 0, "n_columns": 0}
 
-    # Column order: all features × all parcels, in the order features were requested
+    # Stable subject order used for both files so rows align
+    subject_order = sorted(subject_rows.keys())
+
+    # Column order: all features × all parcels in requested feature order
     columns = [
         f"{feature}_parcel_{p:03d}"
         for feature in features
@@ -186,24 +199,41 @@ def write_subject_roi_csv(
     ]
 
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, data_filename)
-    with open(output_path, "w", newline="") as f:
+
+    data_path = os.path.join(output_dir, data_filename)
+    with open(data_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore", restval="")
         writer.writeheader()
-        for subject_id in sorted(subject_rows.keys()):
+        for subject_id in subject_order:
             writer.writerow(subject_rows[subject_id])
 
+    covariate_path = os.path.join(output_dir, covariate_filename)
+    with open(covariate_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["subject_id"])
+        writer.writeheader()
+        for subject_id in subject_order:
+            writer.writerow({"subject_id": f"sub-{subject_id}"})
+
     logging.info(
-        f"Subject CSV written: {len(subject_rows)} subjects × {len(columns)} columns → {output_path}"
+        f"Data.csv written: {len(subject_order)} subjects × {len(columns)} columns → {data_path}"
     )
-    return {"path": output_path, "n_subjects": len(subject_rows), "n_columns": len(columns)}
+    logging.info(
+        f"Covariate.csv written: {len(subject_order)} subjects (add demographic columns) → {covariate_path}"
+    )
+    return {
+        "data_path": data_path,
+        "covariate_path": covariate_path,
+        "n_subjects": len(subject_order),
+        "n_columns": len(columns),
+    }
 
 
-def _write_mock_subject_csv(
+def _write_mock_subject_csvs(
     site_data: dict,
     features: list,
     output_dir: str,
     data_filename: str,
+    covariate_filename: str,
 ) -> dict:
     mock = site_data.get("mock_derivatives", {})
     n_subjects = mock.get("n_subjects", 1)
@@ -221,20 +251,40 @@ def _write_mock_subject_csv(
 
     if not columns:
         logging.warning("No mock ROI values found for subject CSV features")
-        return {"path": None, "n_subjects": 0, "n_columns": 0}
+        return {"data_path": None, "covariate_path": None, "n_subjects": 0, "n_columns": 0}
+
+    # subject_ids as sub-001 … sub-NNN, zero-padded to match n_subjects width
+    width = len(str(n_subjects))
+    subject_ids = [f"sub-{i:0{width}d}" for i in range(1, n_subjects + 1)]
 
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, data_filename)
-    with open(output_path, "w", newline="") as f:
+
+    data_path = os.path.join(output_dir, data_filename)
+    with open(data_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=columns)
         writer.writeheader()
-        for _ in range(n_subjects):
+        for _ in subject_ids:
             writer.writerow(row_template)
 
+    covariate_path = os.path.join(output_dir, covariate_filename)
+    with open(covariate_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["subject_id"])
+        writer.writeheader()
+        for subject_id in subject_ids:
+            writer.writerow({"subject_id": subject_id})
+
     logging.info(
-        f"Mock subject CSV written: {n_subjects} subjects × {len(columns)} columns → {output_path}"
+        f"Mock Data.csv written: {n_subjects} subjects × {len(columns)} columns → {data_path}"
     )
-    return {"path": output_path, "n_subjects": n_subjects, "n_columns": len(columns)}
+    logging.info(
+        f"Mock Covariate.csv written: {n_subjects} subjects → {covariate_path}"
+    )
+    return {
+        "data_path": data_path,
+        "covariate_path": covariate_path,
+        "n_subjects": n_subjects,
+        "n_columns": len(columns),
+    }
 
 
 def _subject_id_from_path(nifti_path) -> str:
