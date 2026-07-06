@@ -2,13 +2,14 @@
 
 Federated fMRI analysis using [HALFpipe](https://github.com/HALFpipe/HALFpipe) on the NeuroFLAME platform. Each participating site runs HALFpipe's preprocessing and feature extraction locally; only summary statistics are shared across sites.
 
-Three aggregation modes are supported (and can be combined):
+Four aggregation modes are supported (and can be combined):
 
-| Mode | What sites share | Aggregated output |
+| Mode | What sites share | Output |
 |---|---|---|
 | `qc_metadata` | Motion QC stats (mean FD, FD%) | Cross-site weighted QC report |
 | `roi_values` | Atlas-parcellated feature means (ReHo, ALFF, …) | Weighted global parcel means |
 | `voxelwise_maps` | Within-site NIfTI stat maps | Weighted meta-analysis maps |
+| `subject_csv` | Nothing — files are written locally only | `Data.csv` + `Covariate.csv` per site, ready for [nfc-combatdc](../nfc-combatdc/) |
 
 ---
 
@@ -125,6 +126,10 @@ nfc-halfpipe/
     "spreadsheet": null,
     "covariates": []
   },
+  "subject_csv_config": {
+    "data_file": "Data.csv",
+    "covariate_file": "Covariate.csv"
+  },
   "min_subjects": 1,
   "n_procs": 1
 }
@@ -233,6 +238,44 @@ The image bakes `DATA_DIR=/workspace/data/` and `OUTPUT_DIR=/workspace/output/` 
 
 ---
 
+## Chaining with nfc-combatdc
+
+Add `"subject_csv"` to `aggregation_types` to produce per-site input files for [nfc-combatdc](../nfc-combatdc/):
+
+```json
+"aggregation_types": ["qc_metadata", "roi_values", "subject_csv"],
+"subject_csv_config": {
+  "data_file": "Data.csv",
+  "covariate_file": "Covariate.csv"
+}
+```
+
+Each site's output directory will contain:
+
+| File | Contents |
+|---|---|
+| `Data.csv` | All-numeric matrix — one row per subject, one column per `{feature}_{parcel}`. No subject_id column. Direct input for nfc-combatdc's `data_file`. |
+| `Covariate.csv` | Per-subject demographics and QC, row-aligned with `Data.csv`. Populated automatically from the site's BIDS `participants.tsv` (all demographic columns) plus HALFpipe per-subject QC metrics (`mean_fd`, `mean_fd_perc`, `mean_gm_tsnr`). The site administrator selects which columns to declare in nfc-combatdc's `covariates_types`. |
+
+Then set nfc-combatdc's `parameters.json` to point at these files:
+
+```json
+{
+  "data_file": "Data.csv",
+  "covariate_file": "Covariate.csv",
+  "combat_algo": "combatMegaDC",
+  "covariates_types": {
+    "age": "float",
+    "gender": "str",
+    "psychosis": "bool"
+  }
+}
+```
+
+Point nfc-combatdc's data directory at nfc-halfpipe's output directory for each site so it reads the files nfc-halfpipe wrote. The `covariates_types` keys must match column names present in `Covariate.csv` — use whatever subset of the demographic columns is appropriate for the analysis.
+
+---
+
 ## Task Flow
 
 ```
@@ -240,9 +283,10 @@ Phase 1  → RUN_HALFPIPE (all sites)
              site: run halfpipe → extract QC
              server: store QC per site
 
-Phase 2a → SEND_ROI_VALUES (if "roi_values" in aggregation_types)
-             site: extract parcel means from NIfTI feature maps
-             server: store ROI values per site
+Phase 2a → SEND_ROI_VALUES (if "roi_values" or "subject_csv" in aggregation_types)
+             site [roi_values]:  extract parcel means → send to server
+             site [subject_csv]: write Data.csv + Covariate.csv locally (nothing sent)
+             server [roi_values]: store ROI values per site
 
 Phase 2b → SEND_SITE_STATS (if "voxelwise_maps" in aggregation_types)
              site: run halfpipe group-level → compress NIfTI maps

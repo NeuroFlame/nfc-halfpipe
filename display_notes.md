@@ -4,11 +4,12 @@
 
 This computation implements federated fMRI analysis using [HALFpipe](https://github.com/HALFpipe/HALFpipe), a reproducible neuroimaging pipeline built on fmriprep and FSL. Each participating site runs HALFpipe's full subject-level preprocessing and feature extraction pipeline on its local fMRI data. Only summary statistics — never raw images or individual-level data — are shared with the central aggregator.
 
-Three aggregation modes are supported and can be combined:
+Four aggregation modes are supported and can be combined:
 
 - **`qc_metadata`** — collect motion and data-quality statistics (mean framewise displacement, FD percentage) across sites, producing a federated QC report. Always runs as part of the first phase.
 - **`roi_values`** — extract atlas-parcellated mean values from HALFpipe feature maps (e.g., ReHo, ALFF, seed-based connectivity) at each site, then compute weighted cross-site means per parcel.
 - **`voxelwise_maps`** — each site runs a within-site group-level analysis using HALFpipe's `group-level` command, and the resulting statistical maps are combined at the server via a weighted meta-analysis.
+- **`subject_csv`** — write per-subject parcel values (`Data.csv`) and a covariate file (`Covariate.csv`) to each site's output directory. Nothing is shared with the server. These files are the direct inputs for [nfc-combatdc](https://github.com/NeuroFLAME/nfc-combatdc) harmonisation.
 
 
 #### Example
@@ -75,13 +76,15 @@ The `fmap` entries are optional. When AP/PA EPI fieldmaps are present in the BID
 | Variable Name | Type | Description | Allowed Options | Default | Required |
 |---|---|---|---|---|---|
 | `run_halfpipe` | `bool` | Whether to run HALFpipe on local data. Set to `false` to use pre-computed derivatives. | `true`, `false` | `true` | ✅ Yes |
-| `aggregation_types` | `list[string]` | Which aggregation modes to run. Can be a single string or a list. | `"qc_metadata"`, `"roi_values"`, `"voxelwise_maps"` | `["qc_metadata"]` | ✅ Yes |
+| `aggregation_types` | `list[string]` | Which aggregation modes to run. Can be a single string or a list. | `"qc_metadata"`, `"roi_values"`, `"voxelwise_maps"`, `"subject_csv"` | `["qc_metadata"]` | ✅ Yes |
 | `halfpipe_spec` | `object` | HALFpipe `spec.json` content. Defines input files, preprocessing settings, and features. Required when `run_halfpipe` is `true`. See [HALFpipe documentation](https://github.com/HALFpipe/HALFpipe) for the full spec format. File paths must use the `{bids_directory}` placeholder — see note below. | valid HALFpipe spec | — | Conditional |
 | `fs_license_path` | `string` | Absolute path to a FreeSurfer license file inside the container. Required when `run_halfpipe` is `true` (fMRIPrep uses FreeSurfer for surface reconstruction). | any valid path | `/workspace/license.txt` | Conditional |
 | `roi_extraction.atlas_path` | `string` | Absolute path to an integer-labeled parcellation atlas NIfTI file (`.nii` or `.nii.gz`). Each unique nonzero integer is treated as one parcel. Required when `"roi_values"` is in `aggregation_types`. | any valid path | — | Conditional |
 | `roi_extraction.features` | `list[string]` | HALFpipe feature names to extract ROI values from. Must match feature names defined in `halfpipe_spec`. | e.g. `["reho", "falff"]` | `[]` | Conditional |
 | `voxelwise_maps.spreadsheet` | `string` | Path to a covariate spreadsheet for within-site group-level analysis. Used only when `"voxelwise_maps"` is in `aggregation_types`. | any valid path | `null` | No |
 | `voxelwise_maps.covariates` | `list[string]` | Covariate column names to include in the within-site group-level design matrix. | list of strings | `[]` | No |
+| `subject_csv_config.data_file` | `string` | Filename for the all-numeric per-subject parcel matrix written by `"subject_csv"`. Set nfc-combatdc's `"data_file"` parameter to the same name. | any filename | `"Data.csv"` | No |
+| `subject_csv_config.covariate_file` | `string` | Filename for the per-subject covariate file written by `"subject_csv"`. Set nfc-combatdc's `"covariate_file"` parameter to the same name. | any filename | `"Covariate.csv"` | No |
 | `min_subjects` | `int` | Minimum number of successfully preprocessed subjects required at a site before it contributes data to the aggregation. | any positive integer | `1` | No |
 | `n_procs` | `int` | Number of parallel processes to use when running HALFpipe. | any positive integer | `1` | No |
 
@@ -154,14 +157,24 @@ In all modes, motion QC statistics (mean framewise displacement, FD percentage a
 
 The server aggregates QC statistics from all sites using weighted means (weighted by each site's subject count).
 
-**Phase 2a — ROI Value Extraction** *(only when `"roi_values"` is in `aggregation_types`)*
+**Phase 2a — ROI Value Extraction / Subject CSV** *(only when `"roi_values"` or `"subject_csv"` is in `aggregation_types`)*
 
-Each site's executor:
+**`roi_values`** — Each site's executor:
 1. Loads each requested HALFpipe feature map (NIfTI) for every successfully preprocessed subject.
 2. Applies the provided atlas parcellation: for each parcel, computes the mean signal value across voxels within the parcel and averages across subjects.
 3. Sends the resulting `{feature → {parcel → mean_value}}` dictionary and subject count to the server.
 
 The server computes a cross-site weighted mean for each feature × parcel combination.
+
+**`subject_csv`** — Each site's executor writes two files locally (nothing is sent to the server):
+1. **`Data.csv`**: all-numeric matrix with one row per subject and one column per `{feature}_{parcel}` combination. Column names follow the pattern `reho_parcel_001`, `falff_parcel_001`, etc.
+2. **`Covariate.csv`**: per-subject covariate file, row-aligned with `Data.csv`, populated from:
+   - BIDS `participants.tsv` — all demographic columns present at the site (age, sex, group, clinical scores, etc.)
+   - HALFpipe per-subject QC metrics appended as the last three columns: `mean_fd`, `mean_fd_perc`, `mean_gm_tsnr`
+
+   In mock mode (no real derivatives), `Covariate.csv` contains only a `subject_id` column.
+
+These files are the direct inputs for nfc-combatdc. Set nfc-combatdc's `"data_file": "Data.csv"` and `"covariate_file": "Covariate.csv"` in its `parameters.json`, and point its data directory at this computation's output directory.
 
 **Phase 2b — Voxelwise Meta-Analysis** *(only when `"voxelwise_maps"` is in `aggregation_types`)*
 
@@ -194,6 +207,8 @@ Results are written to each site's output directory at the end of the computatio
 |---|---|
 | `qc_metadata.json` | Site-level QC summary (n_subjects, mean FD, FD percentage). Always produced. |
 | `roi_values.json` | Site-level parcellated feature means per subject. Produced when `"roi_values"` is in `aggregation_types`. |
+| `Data.csv` | Per-subject parcel value matrix. One row per subject, columns are `{feature}_{parcel_label}` — all-numeric, no subject_id column. Produced when `"subject_csv"` is in `aggregation_types`. |
+| `Covariate.csv` | Per-subject covariate file, row-aligned with `Data.csv`. Columns: `subject_id`, all demographic columns from BIDS `participants.tsv`, then `mean_fd`, `mean_fd_perc`, `mean_gm_tsnr`. Produced when `"subject_csv"` is in `aggregation_types`. |
 | `site_stats_summary.json` | Summary of voxelwise maps sent to the server (map count, n_subjects). Produced when `"voxelwise_maps"` is in `aggregation_types`. |
 | `global_results.json` | Global aggregated results from the server, containing all active mode outputs. Always produced. |
 | `index.html` | Self-contained interactive HTML report summarising QC metrics, ROI value tables with inline bar charts, and voxelwise map catalogue. Generated alongside `global_results.json`. Open in any browser. |
