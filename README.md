@@ -25,17 +25,15 @@ NeuroFLAME is designed to run on desktops, laptops, and HPC clusters. The Docker
 
 ### Apple Silicon (arm64) — known limitation
 
-Docker on Apple Silicon runs Linux containers. fMRIPrep depends on FSL (BET for BOLD brain extraction, FAST for tissue segmentation), and FSL does not currently publish `linux/aarch64` binaries. Until it does, the production image (`linux/amd64`) must be used with Rosetta emulation on Apple Silicon:
+Docker on Apple Silicon runs Linux containers. fMRIPrep calls FSL FAST unconditionally for tissue segmentation (smriprep Stage 3), and FSL does not publish `linux/aarch64` binaries. Until fMRIPrep replaces that step or FSL ships an arm64 release, the production image (`linux/amd64`) must be used with Rosetta emulation on Apple Silicon:
 
 ```bash
 docker pull --platform linux/amd64 nfc-halfpipe:prod
 ```
 
-This works but is **3–5× slower** than native execution due to Rosetta's x86 JIT overhead. For a single subject, expect 4–6 hours vs ~1.5 hours natively.
+This works but is **3–5× slower** than native execution due to Rosetta's x86 JIT overhead.
 
-**Planned fix:** configure fMRIPrep to use ANTs for all brain-extraction and registration steps (`--skull-strip-template` and related flags), eliminating the FSL dependency. Once validated, a native `linux/arm64` image will be published alongside the amd64 image as a multi-arch manifest so `docker pull` selects the right image automatically.
-
-**Tracking:** FSL `linux/aarch64` support — monitor [FSL GitHub](https://github.com/Washington-University/FSLInstaller) for an official arm64 release.
+**Planned fix:** fMRIPrep dropping the FSL FAST dependency in favour of a pure-Python or FreeSurfer-based segmentation (e.g. SynthSeg). This is tracked in the [nipreps/smriprep](https://github.com/nipreps/smriprep) roadmap and is more likely to land before FSL publishes linux/aarch64 binaries. Once the FSL dependency is gone, a native `linux/arm64` image will be published alongside the amd64 image as a multi-arch manifest.
 
 ---
 
@@ -149,7 +147,9 @@ nfc-halfpipe/
 }
 ```
 
-`mock_derivatives` is read when `run_halfpipe=false` and no `derivatives_directory` is set (pure mock/dev mode). In production, the data directory the user points to in the NeuroFLAME UI is used directly as the BIDS root. Set `derivatives_directory` to skip re-running HALFpipe when derivatives from a prior run already exist — the computation will read real QC and feature maps from that path instead.
+`mock_derivatives` is read when `run_halfpipe=false` and no `derivatives_directory` is set (pure mock/dev mode). In production, the data directory the user points to in the NeuroFLAME UI is used directly as the BIDS root.
+
+**Skipping HALFpipe when derivatives already exist:** The computation checks for a HALFpipe derivatives tree at `{halfpipe_workdir}/derivatives/halfpipe` before running the pipeline. If that directory exists — either because `derivatives_directory` is set in `data.json`, or because a prior run already completed there — HALFpipe is skipped and the existing results are used. This prevents a multi-hour pipeline re-run when a container restarts mid-federation. To force a fresh run, delete `{halfpipe_workdir}/derivatives/` before starting.
 
 ---
 
@@ -165,18 +165,31 @@ FROM ghcr.io/halfpipe/halfpipe:latest
 
 **2. Enable HALFpipe execution**
 
-In `parameters.json`, set `"run_halfpipe": true` and provide a valid `halfpipe_spec`:
+In `parameters.json`, set `"run_halfpipe": true` and provide a valid `halfpipe_spec`. Include EPI fieldmaps (AP/PA phase-encoding pairs) if your dataset has them — halfpipe links them automatically via the BIDS `IntendedFor` field and runs TOPUP-based susceptibility distortion correction:
 
 ```json
 {
   "run_halfpipe": true,
+  "fs_license_path": "/workspace/license.txt",
   "aggregation_types": ["qc_metadata", "roi_values"],
   "halfpipe_spec": {
-    "version": "1.0.0",
-    "files": [ { "datatype": "func", "suffix": "bold", ... } ],
-    "settings": [ { "name": "default", "bandpass_filter": { ... } } ],
+    "files": [
+      { "datatype": "func", "suffix": "bold",
+        "tags": { "task": "rest" },
+        "path": "{bids_directory}/sub-{sub}/func/sub-{sub}_task-rest_bold.nii.gz" },
+      { "datatype": "anat", "suffix": "T1w", "tags": {},
+        "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_T1w.nii.gz" },
+      { "datatype": "fmap", "suffix": "epi",
+        "tags": { "dir": "AP" },
+        "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-AP_epi.nii.gz" },
+      { "datatype": "fmap", "suffix": "epi",
+        "tags": { "dir": "PA" },
+        "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-PA_epi.nii.gz" }
+    ],
+    "settings": [ { "name": "default", "ica_aroma": false,
+                    "bandpass_filter": { "type": "gaussian", "lp_width": 125.0 } } ],
     "features": [
-      { "name": "reho", "type": "reho", "setting": "default" },
+      { "name": "reho",  "type": "reho",  "setting": "default" },
       { "name": "falff", "type": "falff", "setting": "default" }
     ],
     "models": []
@@ -187,6 +200,8 @@ In `parameters.json`, set `"run_halfpipe": true` and provide a valid `halfpipe_s
   }
 }
 ```
+
+Omit the `fmap` entries if your dataset has no fieldmaps — halfpipe will run without SDC.
 
 **3. Point each site to its BIDS data**
 

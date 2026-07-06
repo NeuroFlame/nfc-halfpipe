@@ -16,38 +16,58 @@ Three aggregation modes are supported and can be combined:
 ```json
 {
     "run_halfpipe": true,
+    "fs_license_path": "/workspace/license.txt",
     "aggregation_types": ["qc_metadata", "roi_values"],
     "halfpipe_spec": {
-        "version": "1.0.0",
         "files": [
             {
                 "datatype": "func",
                 "suffix": "bold",
                 "tags": { "task": "rest" },
-                "path": "{bids_directory}/sub-{subject}/func/sub-{subject}_task-rest_bold.nii.gz"
+                "path": "{bids_directory}/sub-{sub}/func/sub-{sub}_task-rest_bold.nii.gz"
+            },
+            {
+                "datatype": "anat",
+                "suffix": "T1w",
+                "tags": {},
+                "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_T1w.nii.gz"
+            },
+            {
+                "datatype": "fmap",
+                "suffix": "epi",
+                "tags": { "dir": "AP" },
+                "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-AP_epi.nii.gz"
+            },
+            {
+                "datatype": "fmap",
+                "suffix": "epi",
+                "tags": { "dir": "PA" },
+                "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-PA_epi.nii.gz"
             }
         ],
         "settings": [
             {
                 "name": "default",
-                "ica_aroma": true,
+                "ica_aroma": false,
                 "bandpass_filter": { "type": "gaussian", "lp_width": 125.0 }
             }
         ],
         "features": [
-            { "name": "reho", "type": "reho", "setting": "default" },
-            { "name": "alff", "type": "alff", "setting": "default" }
+            { "name": "reho",  "type": "reho",  "setting": "default" },
+            { "name": "falff", "type": "falff", "setting": "default" }
         ],
         "models": []
     },
     "roi_extraction": {
         "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks_order.nii.gz",
-        "features": ["reho", "alff"]
+        "features": ["reho", "falff"]
     },
     "min_subjects": 5,
     "n_procs": 4
 }
 ```
+
+The `fmap` entries are optional. When AP/PA EPI fieldmaps are present in the BIDS dataset and listed in the spec, HALFpipe links them automatically via `IntendedFor` and runs TOPUP-based susceptibility distortion correction. Omit the `fmap` entries if your dataset has no fieldmaps.
 
 
 #### Settings Specification
@@ -56,9 +76,10 @@ Three aggregation modes are supported and can be combined:
 |---|---|---|---|---|---|
 | `run_halfpipe` | `bool` | Whether to run HALFpipe on local data. Set to `false` to use pre-computed derivatives. | `true`, `false` | `true` | ✅ Yes |
 | `aggregation_types` | `list[string]` | Which aggregation modes to run. Can be a single string or a list. | `"qc_metadata"`, `"roi_values"`, `"voxelwise_maps"` | `["qc_metadata"]` | ✅ Yes |
-| `halfpipe_spec` | `object` | Full HALFpipe `spec.json` content. Defines input files, preprocessing settings, and features. Required when `run_halfpipe` is `true`. See [HALFpipe documentation](https://github.com/HALFpipe/HALFpipe) for the full spec format. File paths must use the `{bids_directory}` placeholder — see note below. | valid HALFpipe spec | — | Conditional |
+| `halfpipe_spec` | `object` | HALFpipe `spec.json` content. Defines input files, preprocessing settings, and features. Required when `run_halfpipe` is `true`. See [HALFpipe documentation](https://github.com/HALFpipe/HALFpipe) for the full spec format. File paths must use the `{bids_directory}` placeholder — see note below. | valid HALFpipe spec | — | Conditional |
+| `fs_license_path` | `string` | Absolute path to a FreeSurfer license file inside the container. Required when `run_halfpipe` is `true` (fMRIPrep uses FreeSurfer for surface reconstruction). | any valid path | `/workspace/license.txt` | Conditional |
 | `roi_extraction.atlas_path` | `string` | Absolute path to an integer-labeled parcellation atlas NIfTI file (`.nii` or `.nii.gz`). Each unique nonzero integer is treated as one parcel. Required when `"roi_values"` is in `aggregation_types`. | any valid path | — | Conditional |
-| `roi_extraction.features` | `list[string]` | HALFpipe feature names to extract ROI values from. Must match feature names defined in `halfpipe_spec`. | e.g. `["reho", "alff"]` | `[]` | Conditional |
+| `roi_extraction.features` | `list[string]` | HALFpipe feature names to extract ROI values from. Must match feature names defined in `halfpipe_spec`. | e.g. `["reho", "falff"]` | `[]` | Conditional |
 | `voxelwise_maps.spreadsheet` | `string` | Path to a covariate spreadsheet for within-site group-level analysis. Used only when `"voxelwise_maps"` is in `aggregation_types`. | any valid path | `null` | No |
 | `voxelwise_maps.covariates` | `list[string]` | Covariate column names to include in the within-site group-level design matrix. | list of strings | `[]` | No |
 | `min_subjects` | `int` | Minimum number of successfully preprocessed subjects required at a site before it contributes data to the aggregation. | any positive integer | `1` | No |
@@ -73,18 +94,18 @@ Three aggregation modes are supported and can be combined:
         "datatype": "func",
         "suffix": "bold",
         "tags": { "task": "rest" },
-        "path": "{bids_directory}/sub-{subject}/func/sub-{subject}_task-rest_bold.nii.gz"
+        "path": "{bids_directory}/sub-{sub}/func/sub-{sub}_task-rest_bold.nii.gz"
     },
     {
         "datatype": "anat",
         "suffix": "T1w",
         "tags": {},
-        "path": "{bids_directory}/sub-{subject}/anat/sub-{subject}_T1w.nii.gz"
+        "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_T1w.nii.gz"
     }
 ]
 ```
 
-`{subject}` is a standard HALFpipe placeholder expanded per-subject by HALFpipe itself. `{bids_directory}` is expanded by this computation before passing the spec to HALFpipe.
+`{sub}` is a standard HALFpipe placeholder expanded per-subject by HALFpipe itself. `{bids_directory}` is expanded by this computation before passing the spec to HALFpipe.
 
 
 #### Input Description
@@ -101,17 +122,18 @@ Each site may optionally provide a `data.json` file in its data directory:
 
 | Field | Type | Description | Required |
 |---|---|---|---|
-| `derivatives_directory` | `string` | Path to an existing HALFpipe derivatives directory. When set alongside `"run_halfpipe": false` in parameters, the computation skips the HALFpipe subprocess and reads real QC metrics and feature maps from this directory instead. | No |
+| `derivatives_directory` | `string` | Path to an existing HALFpipe derivatives directory. When set and the directory exists, the computation skips the HALFpipe subprocess and reads real QC metrics and feature maps from this path — regardless of the `run_halfpipe` flag. | No |
 
 HALFpipe does not require strict BIDS formatting; file paths can be specified using glob patterns in `halfpipe_spec.files`. Refer to the [HALFpipe documentation](https://github.com/HALFpipe/HALFpipe) for supported input formats.
 
-**Three operating modes:**
+**Four operating modes:**
 
-| `run_halfpipe` | `derivatives_directory` | Behaviour |
+| `run_halfpipe` | Derivatives present? | Behaviour |
 |---|---|---|
-| `true` | — | HALFpipe runs subject-level preprocessing and feature extraction on the site's BIDS data |
-| `false` | set | HALFpipe is skipped; real QC metrics and feature maps are read from the existing derivatives directory |
-| `false` | not set | Pure mock mode — all values are read from `mock_derivatives` in `data.json` (for development/testing without fMRI data) |
+| `true` | No existing derivatives | HALFpipe runs subject-level preprocessing and feature extraction on the site's BIDS data |
+| `true` | `{halfpipe_workdir}/derivatives/halfpipe` exists | HALFpipe is skipped automatically; existing derivatives from the prior run are used. To force a re-run, delete `{halfpipe_workdir}/derivatives/` before starting. |
+| `false` | `derivatives_directory` set in `data.json` | HALFpipe is skipped; real QC metrics and feature maps are read from the specified path |
+| `false` | no `derivatives_directory` | Pure mock mode — all values are read from `mock_derivatives` in `data.json` (for development/testing without fMRI data) |
 
 ---
 
@@ -123,8 +145,9 @@ The computation runs in three phases:
 
 Each site's executor operates in one of three modes depending on `run_halfpipe` and `derivatives_directory`:
 
-- **Run mode** (`run_halfpipe=true`): Writes the provided `halfpipe_spec` to a local working directory and invokes HALFpipe. HALFpipe runs fmriprep preprocessing followed by single-subject feature extraction (ReHo, ALFF, seed correlation, task contrasts, etc.) for every subject.
-- **Reuse mode** (`run_halfpipe=false`, `derivatives_directory` set): Skips the HALFpipe subprocess and reads real QC metrics and feature maps from an existing derivatives directory produced by a prior HALFpipe run.
+- **Run mode** (`run_halfpipe=true`, no existing derivatives): Writes the provided `halfpipe_spec` to a local working directory and invokes HALFpipe. HALFpipe runs fMRIPrep preprocessing (including TOPUP-based susceptibility distortion correction when AP/PA fieldmaps are declared in the spec) followed by single-subject feature extraction (ReHo, fALFF, seed correlation, task contrasts, etc.) for every subject.
+- **Auto-reuse mode** (`run_halfpipe=true`, prior derivatives found in workdir): If a `derivatives/halfpipe` tree already exists in the working directory from a completed prior run, HALFpipe is skipped and those results are used directly. This prevents redundant multi-hour re-runs when a container restarts mid-federation.
+- **Explicit reuse mode** (`run_halfpipe=false`, `derivatives_directory` set in `data.json`): Skips HALFpipe and reads real QC metrics and feature maps from the specified path.
 - **Mock mode** (`run_halfpipe=false`, no `derivatives_directory`): Uses pre-computed values from `mock_derivatives` in `data.json`. Intended for development and testing without fMRI data or a HALFpipe installation.
 
 In all modes, motion QC statistics (mean framewise displacement, FD percentage above threshold) are extracted and sent to the server.
