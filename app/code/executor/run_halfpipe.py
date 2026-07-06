@@ -46,6 +46,16 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
     # halfpipe regardless of run_halfpipe. This lets a site contribute real
     # results from a prior run without re-running the full pipeline.
     derivatives_directory = site_data.get("derivatives_directory")
+    if not derivatives_directory and run_halfpipe:
+        # Auto-detect: if the workdir already has a halfpipe derivatives tree
+        # (from a previous run), reuse it rather than re-running the whole
+        # pipeline. Saves hours when the container restarts mid-federation.
+        # To force a fresh run: delete {workdir}/derivatives/ before starting.
+        _auto = os.path.join(workdir, "derivatives", "halfpipe")
+        if os.path.isdir(_auto):
+            logging.info(f"Auto-detected existing derivatives at {_auto}; skipping halfpipe re-run")
+            derivatives_directory = _auto
+
     if derivatives_directory and os.path.isdir(str(derivatives_directory)):
         logging.info(f"Using existing derivatives at {derivatives_directory}")
         qc_summary = _extract_qc_from_derivatives(str(derivatives_directory))
