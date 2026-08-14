@@ -6,7 +6,7 @@ from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 
-from .aggregate_results import aggregate_qc_metadata, aggregate_roi_values, aggregate_voxelwise
+from .aggregate_results import aggregate_qc_metadata, aggregate_roi_values, aggregate_voxelwise, aggregate_connectivity
 
 
 class HALFpipeAggregator(Aggregator):
@@ -24,6 +24,7 @@ class HALFpipeAggregator(Aggregator):
         self._halfpipe_results: Dict[str, dict] = {}
         self._roi_results: Dict[str, dict] = {}
         self._voxelwise_results: Dict[str, dict] = {}
+        self._connectivity_results: Dict[str, dict] = {}
 
     # ------------------------------------------------------------------ #
     # Phase-specific accept methods                                        #
@@ -50,6 +51,14 @@ class HALFpipeAggregator(Aggregator):
         self._voxelwise_results[site_name] = result_data
         n_maps = len(result_data.get("site_stats", {}))
         logging.info(f"Accepted voxelwise stats from {site_name}: {n_maps} maps")
+        return True
+
+    def accept_connectivity_result(self, client_task, fl_ctx: FLContext) -> bool:
+        site_name = _get_site_name(client_task.result)
+        result_data = client_task.result.get("result", {})
+        self._connectivity_results[site_name] = result_data
+        atlases = list(result_data.get("connectivity", {}).keys())
+        logging.info(f"Accepted connectivity matrices from {site_name}: atlases={atlases}")
         return True
 
     # ------------------------------------------------------------------ #
@@ -89,6 +98,12 @@ class HALFpipeAggregator(Aggregator):
         if self._voxelwise_results:
             logging.info(f"Aggregating voxelwise maps from {len(self._voxelwise_results)} sites")
             global_results["voxelwise_maps"] = aggregate_voxelwise(self._voxelwise_results)
+
+        if self._connectivity_results:
+            logging.info(
+                f"Aggregating connectivity matrices from {len(self._connectivity_results)} sites"
+            )
+            global_results["connectivity"] = aggregate_connectivity(self._connectivity_results)
 
         outgoing = Shareable()
         outgoing["global_results"] = global_results

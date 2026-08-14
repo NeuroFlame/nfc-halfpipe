@@ -5,6 +5,7 @@
       "tasks": [
         "RUN_HALFPIPE",
         "SEND_ROI_VALUES",
+        "SEND_ATLAS_CONNECTIVITY",
         "SEND_SITE_STATS",
         "ACCEPT_GLOBAL_RESULTS"
       ],

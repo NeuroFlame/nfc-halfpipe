@@ -4,10 +4,11 @@
 
 This computation implements federated fMRI analysis using [HALFpipe](https://github.com/HALFpipe/HALFpipe), a reproducible neuroimaging pipeline built on fmriprep and FSL. Each participating site runs HALFpipe's full subject-level preprocessing and feature extraction pipeline on its local fMRI data. Only summary statistics — never raw images or individual-level data — are shared with the central aggregator.
 
-Four aggregation modes are supported and can be combined:
+Five aggregation modes are supported and can be combined:
 
 - **`qc_metadata`** — collect motion and data-quality statistics (mean framewise displacement, FD percentage) across sites, producing a federated QC report. Always runs as part of the first phase.
 - **`roi_values`** — extract atlas-parcellated mean values from HALFpipe feature maps (e.g., ReHo, ALFF, seed-based connectivity) at each site, then compute weighted cross-site means per parcel.
+- **`atlas_connectivity`** — extract the full N×N functional connectivity (correlation) matrix per subject using HALFpipe's native `atlas_based_connectivity` feature. Each site sends a site-mean Fisher-z matrix; the server computes a subject-count-weighted average and back-transforms to correlation space. The federated matrix is written to `global_results.json` and rendered as an interactive heatmap in `index.html`.
 - **`voxelwise_maps`** — each site runs a within-site group-level analysis using HALFpipe's `group-level` command, and the resulting statistical maps are combined at the server via a weighted meta-analysis.
 - **`subject_csv`** — write per-subject parcel values (`Data.csv`) and a covariate file (`Covariate.csv`) to each site's output directory. Nothing is shared with the server. These files are the direct inputs for [nfc-combatdc](https://github.com/NeuroFLAME/nfc-combatdc) harmonisation.
 
@@ -76,7 +77,7 @@ The `fmap` entries are optional. When AP/PA EPI fieldmaps are present in the BID
 | Variable Name | Type | Description | Allowed Options | Default | Required |
 |---|---|---|---|---|---|
 | `run_halfpipe` | `bool` | Whether to run HALFpipe on local data. Set to `false` to use pre-computed derivatives. | `true`, `false` | `true` | ✅ Yes |
-| `aggregation_types` | `list[string]` | Which aggregation modes to run. Can be a single string or a list. | `"qc_metadata"`, `"roi_values"`, `"voxelwise_maps"`, `"subject_csv"` | `["qc_metadata"]` | ✅ Yes |
+| `aggregation_types` | `list[string]` | Which aggregation modes to run. Can be a single string or a list. | `"qc_metadata"`, `"roi_values"`, `"atlas_connectivity"`, `"voxelwise_maps"`, `"subject_csv"` | `["qc_metadata"]` | ✅ Yes |
 | `halfpipe_spec` | `object` | HALFpipe `spec.json` content. Defines input files, preprocessing settings, and features. Required when `run_halfpipe` is `true`. See [HALFpipe documentation](https://github.com/HALFpipe/HALFpipe) for the full spec format. File paths must use the `{bids_directory}` placeholder — see note below. | valid HALFpipe spec | — | Conditional |
 | `fs_license_path` | `string` | Absolute path to a FreeSurfer license file inside the container. Required when `run_halfpipe` is `true` (fMRIPrep uses FreeSurfer for surface reconstruction). | any valid path | `/workspace/license.txt` | Conditional |
 | `roi_extraction.atlas_path` | `string` | Absolute path to an integer-labeled parcellation atlas NIfTI file (`.nii` or `.nii.gz`). Each unique nonzero integer is treated as one parcel. Required when `"roi_values"` is in `aggregation_types`. | any valid path | — | Conditional |
@@ -176,7 +177,19 @@ The server computes a cross-site weighted mean for each feature × parcel combin
 
 These files are the direct inputs for nfc-combatdc. Set nfc-combatdc's `"data_file": "Data.csv"` and `"covariate_file": "Covariate.csv"` in its `parameters.json`, and point its data directory at this computation's output directory.
 
-**Phase 2b — Voxelwise Meta-Analysis** *(only when `"voxelwise_maps"` is in `aggregation_types`)*
+**Phase 2b — Atlas Connectivity Federation** *(only when `"atlas_connectivity"` is in `aggregation_types`)*
+
+Each site's executor:
+1. Locates the per-subject correlation matrix TSV files written by HALFpipe's `atlas_based_connectivity` feature (`*_feature-{name}_atlas-{atlas}_correlation_matrix.tsv`).
+2. Loads each N×N matrix (tab-separated floats, no header) and applies a Fisher z-transformation: `z = arctanh(clip(r, −0.9999, 0.9999))`.
+3. Averages the Fisher-z matrices across subjects to produce a single N×N site-mean matrix.
+4. Sends the Fisher-z matrix and subject count to the server.
+
+The server computes a subject-count-weighted mean across all sites' Fisher-z matrices, then applies the inverse Fisher transform (`tanh`) to recover the federated mean correlation matrix. The diagonal is forced to 1.0 after back-transformation.
+
+Federation via Fisher z-transform is numerically stable and equivalent to the "average Fisher r-to-z" method standard in resting-state meta-analysis.
+
+**Phase 2c — Voxelwise Meta-Analysis** *(only when `"voxelwise_maps"` is in `aggregation_types`)*
 
 Each site's executor:
 1. Runs `halfpipe group-level` locally using the site's subjects and optional covariate spreadsheet.
@@ -207,6 +220,7 @@ Results are written to each site's output directory at the end of the computatio
 |---|---|
 | `qc_metadata.json` | Site-level QC summary (n_subjects, mean FD, FD percentage). Always produced. |
 | `roi_values.json` | Site-level parcellated feature means per subject. Produced when `"roi_values"` is in `aggregation_types`. |
+| `connectivity_matrices.json` | Site-level per-atlas mean Fisher-z matrices sent to the server. Produced when `"atlas_connectivity"` is in `aggregation_types`. |
 | `Data.csv` | Per-subject parcel value matrix. One row per subject, columns are `{feature}_{parcel_label}` — all-numeric, no subject_id column. Produced when `"subject_csv"` is in `aggregation_types`. |
 | `Covariate.csv` | Per-subject covariate file, row-aligned with `Data.csv`. Columns: `subject_id`, all demographic columns from BIDS `participants.tsv`, then `mean_fd`, `mean_fd_perc`, `mean_gm_tsnr`. Produced when `"subject_csv"` is in `aggregation_types`. |
 | `site_stats_summary.json` | Summary of voxelwise maps sent to the server (map count, n_subjects). Produced when `"voxelwise_maps"` is in `aggregation_types`. |
@@ -233,6 +247,18 @@ Results are written to each site's output directory at the end of the computatio
         "alff": { "parcel_001": 0.626, "parcel_002": 0.589, "..." : "..." },
         "_n_sites": 3,
         "_total_subjects": 36
+    },
+    "connectivity": {
+        "matrices": {
+            "connectivity_atlas-Schaefer200": {
+                "mean_correlation_matrix": [[1.0, 0.42, "..."], [0.42, 1.0, "..."], "..."],
+                "n_parcels": 200,
+                "n_sites": 3,
+                "total_subjects": 36
+            }
+        },
+        "n_sites": 3,
+        "total_subjects": 36
     }
 }
 ```

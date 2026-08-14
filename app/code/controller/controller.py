@@ -11,6 +11,7 @@ from _utils.utils import get_parameters_file_path
 
 TASK_RUN_HALFPIPE = "RUN_HALFPIPE"
 TASK_SEND_ROI_VALUES = "SEND_ROI_VALUES"
+TASK_SEND_ATLAS_CONNECTIVITY = "SEND_ATLAS_CONNECTIVITY"
 TASK_SEND_SITE_STATS = "SEND_SITE_STATS"
 TASK_ACCEPT_GLOBAL_RESULTS = "ACCEPT_GLOBAL_RESULTS"
 
@@ -23,8 +24,9 @@ class HALFpipeController(Controller):
 
     Control flow:
       Phase 1  — broadcast RUN_HALFPIPE to all sites (runs subject-level, collects QC)
-      Phase 2a — broadcast SEND_ROI_VALUES if "roi_values" in aggregation_types
-      Phase 2b — broadcast SEND_SITE_STATS  if "voxelwise_maps" in aggregation_types
+      Phase 2a — broadcast SEND_ROI_VALUES        if "roi_values" or "subject_csv" in aggregation_types
+      Phase 2b — broadcast SEND_ATLAS_CONNECTIVITY if "atlas_connectivity" in aggregation_types
+      Phase 2c — broadcast SEND_SITE_STATS         if "voxelwise_maps" in aggregation_types
       Phase 3  — aggregate all collected data and broadcast ACCEPT_GLOBAL_RESULTS
     """
 
@@ -86,7 +88,18 @@ class HALFpipeController(Controller):
                 abort_signal=abort_signal,
             )
 
-        # Phase 2b: Collect within-site voxelwise stat maps
+        # Phase 2b: Collect atlas-based connectivity matrices
+        if "atlas_connectivity" in aggregation_types:
+            logging.info("Phase 2b: Collecting atlas connectivity matrices from all sites")
+            self._broadcast_task(
+                task_name=TASK_SEND_ATLAS_CONNECTIVITY,
+                data=Shareable(),
+                result_cb=self.aggregator.accept_connectivity_result,
+                fl_ctx=fl_ctx,
+                abort_signal=abort_signal,
+            )
+
+        # Phase 2c: Collect within-site voxelwise stat maps
         if "voxelwise_maps" in aggregation_types:
             logging.info("Phase 2b: Collecting voxelwise stat maps from all sites")
             self._broadcast_task(

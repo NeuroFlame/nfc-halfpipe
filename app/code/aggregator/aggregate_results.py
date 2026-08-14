@@ -1,5 +1,5 @@
 """
-Aggregation functions for the three HALFpipe federated modes.
+Aggregation functions for the HALFpipe federated modes.
 """
 from typing import Any, Dict, Optional
 
@@ -175,3 +175,111 @@ def aggregate_voxelwise(site_results: Dict[str, dict]) -> dict:
             "n_sites": n_sites,
             "total_subjects": total_subjects,
         }
+
+
+# ------------------------------------------------------------------ #
+# Atlas connectivity aggregation                                       #
+# ------------------------------------------------------------------ #
+
+def aggregate_connectivity(site_results: Dict[str, dict]) -> dict:
+    """
+    Federate per-atlas connectivity matrices across sites.
+
+    Each site provides (from ``SEND_ATLAS_CONNECTIVITY``)::
+
+        {
+            "n_subjects": int,
+            "connectivity": {
+                "{feature}_atlas-{atlas}": {
+                    "mean_fisher_z_matrix": list[list[float]],  # N×N
+                    "n_subjects": int,
+                    "n_parcels": int,
+                }
+            }
+        }
+
+    Federation strategy:
+        1. Each site already sent its within-site mean Fisher-z matrix.
+        2. Compute cross-site weighted mean (weight = n_subjects per site per atlas).
+        3. Back-transform with tanh() → federated mean correlation matrix.
+
+    Returns::
+
+        {
+            "matrices": {
+                "{feature}_atlas-{atlas}": {
+                    "mean_correlation_matrix": list[list[float]],
+                    "n_parcels": int,
+                    "n_sites": int,
+                    "total_subjects": int,
+                }
+            },
+            "n_sites": int,
+            "total_subjects": int,
+        }
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        return {"status": "numpy_not_available", "n_sites": len(site_results)}
+
+    n_sites = len(site_results)
+
+    # Collect all atlas keys present across any site
+    all_keys: set = set()
+    for result in site_results.values():
+        all_keys.update(result.get("connectivity", {}).keys())
+
+    global_connectivity: dict = {}
+    grand_total_subjects = 0
+
+    for key in sorted(all_keys):
+        z_weighted_sum: Optional[Any] = None
+        total_n = 0
+        n_parcels = None
+
+        for site_result in site_results.values():
+            entry = site_result.get("connectivity", {}).get(key)
+            if entry is None:
+                continue
+            n = entry.get("n_subjects", 0)
+            z_matrix = entry.get("mean_fisher_z_matrix")
+            if not z_matrix or n == 0:
+                continue
+
+            z_arr = np.array(z_matrix, dtype=float)
+            if n_parcels is None:
+                n_parcels = z_arr.shape[0]
+            elif z_arr.shape[0] != n_parcels:
+                import logging
+                logging.warning(
+                    f"Parcel count mismatch for '{key}' across sites "
+                    f"({z_arr.shape[0]} vs {n_parcels}) — skipping site"
+                )
+                continue
+
+            z_weighted_sum = (z_arr * n) if z_weighted_sum is None else z_weighted_sum + z_arr * n
+            total_n += n
+
+        if z_weighted_sum is None or total_n == 0 or n_parcels is None:
+            continue
+
+        mean_z = z_weighted_sum / total_n
+        mean_r = np.tanh(mean_z)
+
+        # Enforce unit diagonal (tanh(arctanh(1)) may drift slightly)
+        np.fill_diagonal(mean_r, 1.0)
+
+        global_connectivity[key] = {
+            "mean_correlation_matrix": mean_r.tolist(),
+            "n_parcels": n_parcels,
+            "n_sites": n_sites,
+            "total_subjects": total_n,
+        }
+        grand_total_subjects = max(grand_total_subjects, total_n)
+
+    return {
+        "matrices": global_connectivity,
+        "n_sites": n_sites,
+        "total_subjects": grand_total_subjects,
+    }

@@ -64,7 +64,8 @@ table.stat-table td:first-child{text-align:left}
 .tab-btn.active{background:rgba(99,102,241,.13);color:#6366f1;border-color:#6366f1;font-weight:600}
 [data-theme="dark"] .tab-btn.active{background:rgba(165,180,252,.1);color:#a5b4fc;border-color:#a5b4fc}
 .bar-cell{width:160px;padding:0 .85rem}
-.bar-inner{background:rgba(99,102,241,.2);border-radius:3px;height:7px;min-width:2px}"""
+.bar-inner{background:rgba(99,102,241,.2);border-radius:3px;height:7px;min-width:2px}
+canvas{border-radius:6px}"""
 
 _JS = """\
 function toggleTheme(){
@@ -116,6 +117,7 @@ def generate_html_report(site_name: str, global_results: dict) -> str:
     """
     qc = global_results.get("qc_metadata", {})
     roi = global_results.get("roi_values", {})
+    connectivity = global_results.get("connectivity", {})
     voxelwise = global_results.get("voxelwise_maps", {})
 
     total_subjects = qc.get("total_subjects", 0)
@@ -129,12 +131,16 @@ def generate_html_report(site_name: str, global_results: dict) -> str:
         active_modes.append("qc_metadata")
     if roi:
         active_modes.append("roi_values")
+    if connectivity:
+        active_modes.append("atlas_connectivity")
     if voxelwise:
         active_modes.append("voxelwise_maps")
 
     sidebar_sections = [("sec-overview", "Site Overview"), ("sec-qc", "Quality Control")]
     if roi:
         sidebar_sections.append(("sec-roi", "ROI Values"))
+    if connectivity:
+        sidebar_sections.append(("sec-connectivity", "Connectivity"))
     if voxelwise:
         sidebar_sections.append(("sec-voxelwise", "Voxelwise Maps"))
 
@@ -171,6 +177,7 @@ def generate_html_report(site_name: str, global_results: dict) -> str:
 
     qc_table_html = _build_qc_table(site_summaries)
     roi_html = _build_roi_section(roi) if roi else ""
+    connectivity_html = _build_connectivity_section(connectivity) if connectivity else ""
     voxelwise_html = _build_voxelwise_section(voxelwise) if voxelwise else ""
 
     roi_block = (
@@ -178,6 +185,12 @@ def generate_html_report(site_name: str, global_results: dict) -> str:
         "<div class='section-title'>ROI Values</div>"
         + roi_html + "</div>"
     ) if roi else ""
+
+    connectivity_block = (
+        "<div class='section' id='sec-connectivity'>"
+        "<div class='section-title'>Atlas Connectivity</div>"
+        + connectivity_html + "</div>"
+    ) if connectivity else ""
 
     voxelwise_block = (
         "<div class='section' id='sec-voxelwise'>"
@@ -221,6 +234,7 @@ def generate_html_report(site_name: str, global_results: dict) -> str:
         qc_table_html,
         "</div>",
         roi_block,
+        connectivity_block,
         voxelwise_block,
         "</div>",  # container
         "</div>",  # main-content
@@ -375,6 +389,138 @@ def _build_voxelwise_section(voxelwise: dict) -> str:
         "<ul style='padding-left:1.2rem;color:var(--text2);font-size:.85rem;font-family:monospace'>"
         + items + "</ul></div></div>"
     )
+
+
+def _build_connectivity_section(connectivity: dict) -> str:
+    """
+    Render federated connectivity matrices as interactive canvas heatmaps.
+
+    Each atlas produces one card with:
+      - Key statistics (parcels, sites, subjects)
+      - A blue→white→red correlation heatmap drawn via Canvas API
+      - Mean off-diagonal correlation as a numeric KPI
+
+    Works for any matrix size: 5×5 (mock), 53×53 (NeuroMark),
+    200×200 (Schaefer 200) or larger.
+    """
+    import json
+
+    matrices = connectivity.get("matrices", {})
+    if not matrices:
+        return "<p style='color:var(--text3);font-size:.85rem'>No connectivity data available.</p>"
+
+    _JS_HEATMAP = """\
+function drawHeatmap(canvasId, data) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  var n = data.length;
+  var maxPx = 400;
+  var cell = Math.max(1, Math.floor(maxPx / n));
+  canvas.width = n * cell;
+  canvas.height = n * cell;
+  canvas.style.imageRendering = 'pixelated';
+  var ctx = canvas.getContext('2d');
+  for (var i = 0; i < n; i++) {
+    for (var j = 0; j < n; j++) {
+      ctx.fillStyle = corrColor(data[i][j]);
+      ctx.fillRect(j * cell, i * cell, cell, cell);
+    }
+  }
+}
+function corrColor(r) {
+  r = Math.max(-1, Math.min(1, isNaN(r) ? 0 : r));
+  var t = (r + 1) / 2;
+  var r1, g1, b1, r2, g2, b2, f;
+  if (t <= 0.5) {
+    r1=37;  g1=99;  b1=235;
+    r2=248; g2=250; b2=252;
+    f = t * 2;
+  } else {
+    r1=248; g1=250; b1=252;
+    r2=220; g2=38;  b2=38;
+    f = (t - 0.5) * 2;
+  }
+  return 'rgb('+Math.round(r1+(r2-r1)*f)+','+Math.round(g1+(g2-g1)*f)+','+Math.round(b1+(b2-b1)*f)+')';
+}
+"""
+
+    cards = []
+    heatmap_calls = []
+
+    for idx, (key, entry) in enumerate(sorted(matrices.items())):
+        n_parcels = entry.get("n_parcels", "—")
+        n_sites = entry.get("n_sites", "—")
+        n_subjects = entry.get("total_subjects", "—")
+        matrix = entry.get("mean_correlation_matrix", [])
+
+        # Compute mean off-diagonal correlation for headline KPI
+        mean_offdiag = None
+        if matrix:
+            total, count = 0.0, 0
+            n = len(matrix)
+            for i in range(n):
+                for j in range(n):
+                    if i != j and isinstance(matrix[i][j], (int, float)):
+                        total += matrix[i][j]
+                        count += 1
+            if count > 0:
+                mean_offdiag = round(total / count, 4)
+
+        canvas_id = "heatmap_" + str(idx)
+
+        # Truncate matrix values to 4 decimal places for compact JSON
+        compact = [[round(v, 4) if isinstance(v, float) else v for v in row] for row in matrix]
+        matrix_json = json.dumps(compact, separators=(",", ":"))
+
+        kpi_row = (
+            "<div class='kpi-row'>"
+            + _kpi("Parcels", str(n_parcels))
+            + _kpi("Sites", str(n_sites))
+            + _kpi("Subjects", str(n_subjects))
+            + (_kpi("Mean Off-Diagonal r", "{:.4f}".format(mean_offdiag)) if mean_offdiag is not None else "")
+            + "</div>"
+        )
+
+        legend_html = (
+            "<div style='display:flex;align-items:center;gap:.5rem;margin-top:.6rem;font-size:.72rem;color:var(--text3)'>"
+            "<span style='display:inline-block;width:40px;height:10px;"
+            "background:linear-gradient(to right,#2563eb,#f8fafc,#dc2626);border-radius:3px'></span>"
+            "<span>−1.0</span>"
+            "<span style='flex:1;text-align:center'>correlation</span>"
+            "<span>+1.0</span>"
+            "</div>"
+        )
+
+        card = (
+            "<div class='stat-card' style='margin-bottom:1rem'>"
+            "<div class='stat-card-header'>"
+            "<span class='stat-card-title'>" + _esc(str(key)) + "</span>"
+            "<span style='font-size:.75rem;color:var(--text3)'>"
+            + str(n_parcels) + " × " + str(n_parcels) + " correlation matrix</span>"
+            "</div>"
+            "<div style='padding:.85rem 1.2rem'>"
+            + kpi_row
+            + "<div style='overflow-x:auto;margin-top:.75rem'>"
+            "<canvas id='" + canvas_id + "' style='max-width:100%;display:block;border:1px solid var(--border);border-radius:6px'>"
+            "Your browser does not support canvas.</canvas>"
+            "</div>"
+            + legend_html
+            + "</div></div>"
+        )
+        cards.append(card)
+        heatmap_calls.append(
+            "drawHeatmap('" + canvas_id + "'," + matrix_json + ");"
+        )
+
+    script = (
+        "<script>"
+        + _JS_HEATMAP
+        + "window.addEventListener('load',function(){"
+        + "".join(heatmap_calls)
+        + "});"
+        "</script>"
+    )
+    return "".join(cards) + script
 
 
 def _esc(s: str) -> str:

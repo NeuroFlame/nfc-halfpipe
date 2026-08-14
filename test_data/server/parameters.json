@@ -1,7 +1,7 @@
 {
   "_note": "Mock test run: run_halfpipe=false uses mock_derivatives from each site's data.json. Set run_halfpipe=true to invoke HALFpipe on real data; the site's data directory (set in the NeuroFLAME UI) is used as the BIDS root.",
   "run_halfpipe": false,
-  "aggregation_types": ["qc_metadata", "roi_values"],
+  "aggregation_types": ["qc_metadata", "roi_values", "atlas_connectivity"],
   "halfpipe_spec": {
     "version": "1.0.0",
     "files": [
@@ -16,6 +16,13 @@
         "suffix": "T1w",
         "tags": {},
         "path": "{bids_directory}/sub-{subject}/anat/sub-{subject}_T1w.nii.gz"
+      },
+      {
+        "_note": "Register the Schaefer atlas as a ref file so the atlas_based_connectivity feature can use it.",
+        "datatype": "ref",
+        "suffix": "atlas",
+        "tags": { "desc": "Schaefer200" },
+        "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz"
       }
     ],
     "settings": [
@@ -44,6 +51,14 @@
         "name": "alff",
         "type": "alff",
         "setting": "default"
+      },
+      {
+        "_note": "Atlas-based connectivity: extracts per-parcel BOLD time series and computes the full covariance and correlation matrix. Requires the atlas ref file above.",
+        "name": "connectivity",
+        "type": "atlas_based_connectivity",
+        "setting": "default",
+        "atlases": ["Schaefer200"],
+        "min_region_coverage": 0.8
       }
     ],
     "models": []

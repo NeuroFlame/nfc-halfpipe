@@ -16,11 +16,13 @@ from _utils.utils import (
 from .run_halfpipe import run_halfpipe_and_get_qc
 from .extract_qc_metadata import extract_qc_metadata
 from .extract_roi_values import extract_roi_values, write_subject_roi_csv
+from .extract_connectivity import extract_connectivity_matrices
 from .run_site_group_level import run_site_group_level
 from .generate_report import generate_html_report
 
 TASK_RUN_HALFPIPE = "RUN_HALFPIPE"
 TASK_SEND_ROI_VALUES = "SEND_ROI_VALUES"
+TASK_SEND_ATLAS_CONNECTIVITY = "SEND_ATLAS_CONNECTIVITY"
 TASK_SEND_SITE_STATS = "SEND_SITE_STATS"
 TASK_ACCEPT_GLOBAL_RESULTS = "ACCEPT_GLOBAL_RESULTS"
 
@@ -62,6 +64,9 @@ class HALFpipeExecutor(Executor):
 
         if task_name == TASK_SEND_ROI_VALUES:
             return self._handle_send_roi_values(fl_ctx)
+
+        if task_name == TASK_SEND_ATLAS_CONNECTIVITY:
+            return self._handle_send_atlas_connectivity(fl_ctx)
 
         if task_name == TASK_SEND_SITE_STATS:
             return self._handle_send_site_stats(fl_ctx)
@@ -147,6 +152,30 @@ class HALFpipeExecutor(Executor):
                 output_dir=output_dir,
                 bids_directory=bids_directory,
             )
+
+        result = Shareable()
+        result["result"] = payload
+        return result
+
+    def _handle_send_atlas_connectivity(self, fl_ctx: FLContext) -> Shareable:
+        if self._halfpipe_result is None:
+            self._halfpipe_result = self._load_halfpipe_result(fl_ctx)
+        if self._halfpipe_result is None:
+            raise RuntimeError("RUN_HALFPIPE must complete before SEND_ATLAS_CONNECTIVITY")
+
+        derivatives_path = self._halfpipe_result.get("derivatives_path")
+        connectivity = extract_connectivity_matrices(
+            derivatives_path=derivatives_path,
+            site_data=self._site_data,
+            params=self._params,
+        )
+
+        n_subjects = self._halfpipe_result.get("n_subjects", 0)
+        payload = {
+            "n_subjects": n_subjects,
+            "connectivity": connectivity,
+        }
+        _save_json(payload, "connectivity_matrices.json", fl_ctx)
 
         result = Shareable()
         result["result"] = payload

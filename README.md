@@ -8,6 +8,7 @@ Four aggregation modes are supported (and can be combined):
 |---|---|---|
 | `qc_metadata` | Motion QC stats (mean FD, FD%) | Cross-site weighted QC report |
 | `roi_values` | Atlas-parcellated feature means (ReHo, ALFF, …) | Weighted global parcel means |
+| `atlas_connectivity` | Per-subject Fisher-z correlation matrices (one per atlas) | Federated mean correlation matrix in `global_results.json` + interactive heatmap in `index.html` |
 | `voxelwise_maps` | Within-site NIfTI stat maps | Weighted meta-analysis maps |
 | `subject_csv` | Nothing — files are written locally only | `Data.csv` + `Covariate.csv` per site, ready for [nfc-combatdc](../nfc-combatdc/) |
 
@@ -83,10 +84,11 @@ nfc-halfpipe/
 │   ├── code/
 │   │   ├── _utils/utils.py            # Path helpers (data, output, parameters directories)
 │   │   ├── executor/
-│   │   │   ├── executor.py            # HALFpipeExecutor — routes all four NVFlare tasks
+│   │   │   ├── executor.py            # HALFpipeExecutor — routes all NVFlare tasks
 │   │   │   ├── run_halfpipe.py        # Runs HALFpipe subprocess (or returns mock data)
 │   │   │   ├── extract_qc_metadata.py # Packages motion QC for transmission
 │   │   │   ├── extract_roi_values.py  # Extracts atlas-parcellated means from NIfTI maps
+│   │   │   ├── extract_connectivity.py# Reads correlation matrix TSVs, applies Fisher z-transform
 │   │   │   └── run_site_group_level.py# Runs halfpipe group-level within a site
 │   │   ├── controller/
 │   │   │   └── controller.py          # HALFpipeController — multi-round broadcast logic
@@ -238,6 +240,60 @@ The image bakes `DATA_DIR=/workspace/data/` and `OUTPUT_DIR=/workspace/output/` 
 
 ---
 
+## Atlas-Based Connectivity
+
+Add `"atlas_connectivity"` to `aggregation_types` to federate full functional connectivity matrices:
+
+```json
+"aggregation_types": ["qc_metadata", "atlas_connectivity"],
+"halfpipe_spec": {
+  "files": [
+    { ... },
+    {
+      "datatype": "ref",
+      "suffix": "atlas",
+      "tags": { "desc": "Schaefer200" },
+      "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz"
+    }
+  ],
+  "features": [
+    {
+      "name": "connectivity",
+      "type": "atlas_based_connectivity",
+      "setting": "default",
+      "atlases": ["Schaefer200"],
+      "min_region_coverage": 0.8
+    }
+  ]
+}
+```
+
+**How it works:**
+
+1. HALFpipe's `atlas_based_connectivity` feature extracts the mean BOLD time series for every parcel in the atlas, then computes the full N×N covariance and correlation matrix per subject.
+2. Each site's executor reads the per-subject `*_correlation_matrix.tsv` files, Fisher z-transforms each matrix (`atanh(r)`), and averages across subjects to produce a site-mean Fisher-z matrix.
+3. The server computes a subject-count-weighted mean across sites, then back-transforms (`tanh`) to produce the federated mean correlation matrix.
+4. The result appears in `global_results.json` under `connectivity.matrices` and is rendered as an interactive blue→white→red heatmap in `index.html`.
+
+**Atlas options:**
+
+Any integer-labeled NIfTI parcellation atlas works. The Schaefer 2018 atlas (200 parcels, 17 networks) ships with the Docker image at `/atlases/`. To use a different atlas:
+
+| Atlas | Parcels | Notes |
+|---|---|---|
+| Schaefer 2018 (200-parcel, 17-network) | 200 | Baked into image at `/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz` |
+| NeuroMark 1.0 (53 ICs) | 53 | Derived from ICA; 7 functional network domains; winner-takes-all parcellation from Z-maps. Not yet in image — see below. |
+| NeuroMark 2.0 (105 ICs) | 105 | Higher-resolution ICA template. |
+
+**NeuroMark integration (planned):** NeuroMark ([Du et al., 2020](https://doi.org/10.1016/j.nicl.2020.102375)) is a data-driven ICA atlas from the TReNDS Center with 53 components organized in 7 functional network domains. Its 53×53 connectivity matrix naturally shows the block-diagonal network structure. To use it:
+
+1. Obtain the NeuroMark 1.0 spatial maps (`NeuroMark_fMRI_1.0`) from [the TReNDS data portal](https://trendscenter.org/data/).
+2. Convert the 4D Z-map NIfTI to an integer-labeled parcellation (winner-takes-all per voxel).
+3. Add the parcellation NIfTI to the Docker image (e.g. at `/atlases/NeuroMark_1.0_parcellation.nii.gz`).
+4. Register it in the spec the same way as above, using `"desc": "NeuroMark1"` as the tag.
+
+---
+
 ## Chaining with nfc-combatdc
 
 Add `"subject_csv"` to `aggregation_types` to produce per-site input files for [nfc-combatdc](../nfc-combatdc/):
@@ -288,7 +344,14 @@ Phase 2a → SEND_ROI_VALUES (if "roi_values" or "subject_csv" in aggregation_ty
              site [subject_csv]: write Data.csv + Covariate.csv locally (nothing sent)
              server [roi_values]: store ROI values per site
 
-Phase 2b → SEND_SITE_STATS (if "voxelwise_maps" in aggregation_types)
+Phase 2b → SEND_ATLAS_CONNECTIVITY (if "atlas_connectivity" in aggregation_types)
+             site: load per-subject correlation matrix TSVs from halfpipe derivatives
+                   apply Fisher z-transform → compute site-mean Fisher-z matrix
+                   send {atlas_key → mean_fisher_z_matrix, n_subjects} to server
+             server: weighted-average Fisher-z matrices across sites → tanh back-transform
+                     → federated mean correlation matrix per atlas
+
+Phase 2c → SEND_SITE_STATS (if "voxelwise_maps" in aggregation_types)
              site: run halfpipe group-level → compress NIfTI maps
              server: store stat maps per site
 

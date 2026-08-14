@@ -1,7 +1,7 @@
 {
   "_note": "Tier 4 end-to-end test: real BIDS data (ds005073 sub-B04) + real HALFpipe + full NVFlare federation inside Docker. Includes AP/PA EPI fieldmaps for TOPUP-based SDC. site1 runs halfpipe; sites 2+3 use mock data. Requires: FreeSurfer license at /workspace/license.txt; BIDS root at /workspace/data.",
   "run_halfpipe": true,
-  "aggregation_types": ["qc_metadata", "roi_values"],
+  "aggregation_types": ["qc_metadata", "roi_values", "atlas_connectivity", "subject_csv"],
   "fs_license_path": "/workspace/license.txt",
   "subject_include": ["B04"],
   "n_procs": 2,
@@ -30,6 +30,13 @@
         "suffix": "epi",
         "tags": { "dir": "PA", "run": "1" },
         "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-PA_run-1_epi.nii.gz"
+      },
+      {
+        "_note": "Schaefer 200-parcel atlas registered as a ref file for the atlas_based_connectivity feature.",
+        "datatype": "ref",
+        "suffix": "atlas",
+        "tags": { "desc": "Schaefer200" },
+        "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz"
       }
     ],
     "settings": [
@@ -48,7 +55,15 @@
     ],
     "features": [
       { "name": "reho",  "type": "reho",  "setting": "default", "smoothing": null },
-      { "name": "falff", "type": "falff", "setting": "default", "unfiltered_setting": "unfiltered", "smoothing": null }
+      { "name": "falff", "type": "falff", "setting": "default", "unfiltered_setting": "unfiltered", "smoothing": null },
+      {
+        "_note": "Atlas-based connectivity on preprocessed BOLD: extracts mean parcel time series and the full 200x200 correlation matrix per subject.",
+        "name": "connectivity",
+        "type": "atlas_based_connectivity",
+        "setting": "default",
+        "atlases": ["Schaefer200"],
+        "min_region_coverage": 0.8
+      }
     ],
     "models": []
   },
@@ -60,6 +75,10 @@
   "voxelwise_maps": {
     "spreadsheet": null,
     "covariates": []
+  },
+  "subject_csv_config": {
+    "data_file": "Data.csv",
+    "covariate_file": "Covariate.csv"
   },
   "min_subjects": 1
 }
