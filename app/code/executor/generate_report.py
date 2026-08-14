@@ -391,17 +391,39 @@ def _build_voxelwise_section(voxelwise: dict) -> str:
     )
 
 
+def _resolve_networks(key: str, n_parcels: int):
+    """
+    Return the per-parcel network label list for a known atlas, or None.
+
+    Priority:
+      1. Exact key match (e.g. "connectivity_atlas-Schaefer200")
+      2. Atlas name substring in key  (e.g. "neuromark_atlas-NeuroMark1")
+      3. Parcel count fallback         (200 → Schaefer, 53 → NeuroMark)
+    """
+    if key in _PARCEL_NETWORKS:
+        return _PARCEL_NETWORKS[key]
+    # Substring match on atlas identifier embedded in the key
+    if "Schaefer200" in key and n_parcels == 200:
+        return _SCHAEFER_200_7NET
+    if ("NeuroMark1" in key or "NeuroMark_1" in key) and n_parcels == 53:
+        return _NEUROMARK_1_0_DOMAINS
+    # Parcel-count fallback (less precise — only triggers for the exactly matching sizes)
+    return _PARCEL_NETWORKS.get(n_parcels)
+
+
 def _build_connectivity_section(connectivity: dict) -> str:
     """
-    Render federated connectivity matrices as interactive canvas heatmaps.
+    Render federated connectivity matrices as annotated interactive Canvas heatmaps.
 
-    Each atlas produces one card with:
-      - Key statistics (parcels, sites, subjects)
-      - A blue→white→red correlation heatmap drawn via Canvas API
-      - Mean off-diagonal correlation as a numeric KPI
+    Each atlas card shows:
+      - KPI stats (parcels, sites, subjects, mean off-diagonal r)
+      - Blue→white→red heatmap with 12px colored network-annotation bands on the
+        left and top axes (for known atlases: Schaefer 200-parcel 17-network and
+        NeuroMark 1.0 53-component)
+      - A network legend row below the heatmap
 
-    Works for any matrix size: 5×5 (mock), 53×53 (NeuroMark),
-    200×200 (Schaefer 200) or larger.
+    Works for any matrix size; annotation bands appear only when the atlas is
+    recognised by key name (atlas-Schaefer200, atlas-NeuroMark1) or parcel count.
     """
     import json
 
@@ -409,38 +431,88 @@ def _build_connectivity_section(connectivity: dict) -> str:
     if not matrices:
         return "<p style='color:var(--text3);font-size:.85rem'>No connectivity data available.</p>"
 
+    # ------------------------------------------------------------------ #
+    # Shared JS: heatmap + annotation bands                               #
+    # ------------------------------------------------------------------ #
     _JS_HEATMAP = """\
-function drawHeatmap(canvasId, data) {
-  var canvas = document.getElementById(canvasId);
-  if (!canvas) return;
-  var n = data.length;
-  var maxPx = 400;
-  var cell = Math.max(1, Math.floor(maxPx / n));
-  canvas.width = n * cell;
-  canvas.height = n * cell;
-  canvas.style.imageRendering = 'pixelated';
-  var ctx = canvas.getContext('2d');
-  for (var i = 0; i < n; i++) {
-    for (var j = 0; j < n; j++) {
-      ctx.fillStyle = corrColor(data[i][j]);
-      ctx.fillRect(j * cell, i * cell, cell, cell);
+var _NET_COLORS={
+  'Visual':'#781286','Somatomotor':'#4169e1','DorsAttn':'#00760e',
+  'SalVentAttn':'#c43aff','Limbic':'#dcf8a4','Frontoparietal':'#e69422',
+  'Default':'#cd3c14','Default Mode':'#cd3c14',
+  'SubCortical':'#4d4d4d','Auditory':'#e84d8a','SensoriMotor':'#2166ac',
+  'CogCtrl':'#1b7837','DMN':'#d6604d','Cerebellar':'#4dac26'
+};
+function _netColor(name){return _NET_COLORS[name]||'#94a3b8';}
+function _getBlocks(nets){
+  var blocks=[];var cur=nets[0];var s=0;
+  for(var i=1;i<nets.length;i++){
+    if(nets[i]!==cur){blocks.push({n:cur,s:s,e:i-1});cur=nets[i];s=i;}
+  }
+  blocks.push({n:cur,s:s,e:nets.length-1});
+  return blocks;
+}
+function drawHeatmap(canvasId,data,networks){
+  var canvas=document.getElementById(canvasId);
+  if(!canvas)return;
+  var n=data.length;
+  var maxPx=400;
+  var cell=Math.max(1,Math.floor(maxPx/n));
+  var BAND=networks?12:0;
+  canvas.width=BAND+n*cell;
+  canvas.height=BAND+n*cell;
+  if(n*cell<=maxPx)canvas.style.imageRendering='pixelated';
+  var ctx=canvas.getContext('2d');
+  // Draw matrix
+  for(var i=0;i<n;i++){
+    for(var j=0;j<n;j++){
+      ctx.fillStyle=corrColor(data[i][j]);
+      ctx.fillRect(BAND+j*cell,BAND+i*cell,cell,cell);
     }
   }
+  if(!networks)return;
+  // Draw annotation bands
+  var blocks=_getBlocks(networks);
+  blocks.forEach(function(b){
+    var color=_netColor(b.n);
+    var start=b.s*cell;
+    var len=(b.e-b.s+1)*cell;
+    // Left band (row axis)
+    ctx.fillStyle=color;
+    ctx.fillRect(0,BAND+start,BAND-1,len);
+    // Top band (column axis)
+    ctx.fillRect(BAND+start,0,len,BAND-1);
+    // Network label in left band (rotated) if block is wide enough
+    var blockPx=(b.e-b.s+1)*cell;
+    if(blockPx>=18){
+      ctx.save();
+      ctx.translate(BAND-2,BAND+start+blockPx/2);
+      ctx.rotate(-Math.PI/2);
+      ctx.fillStyle='rgba(0,0,0,0.75)';
+      ctx.font='bold '+(Math.min(9,blockPx/3))+'px sans-serif';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      var lbl=b.n.length>9?b.n.slice(0,8)+'…':b.n;
+      ctx.fillText(lbl,0,0);
+      ctx.restore();
+    }
+  });
+  // Hairline separators between blocks
+  ctx.strokeStyle='rgba(0,0,0,0.25)';
+  ctx.lineWidth=1;
+  blocks.forEach(function(b){
+    if(b.s===0)return;
+    var pos=BAND+b.s*cell-0.5;
+    ctx.beginPath();ctx.moveTo(BAND,pos);ctx.lineTo(BAND+n*cell,pos);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pos,BAND);ctx.lineTo(pos,BAND+n*cell);ctx.stroke();
+  });
 }
-function corrColor(r) {
-  r = Math.max(-1, Math.min(1, isNaN(r) ? 0 : r));
-  var t = (r + 1) / 2;
-  var r1, g1, b1, r2, g2, b2, f;
-  if (t <= 0.5) {
-    r1=37;  g1=99;  b1=235;
-    r2=248; g2=250; b2=252;
-    f = t * 2;
-  } else {
-    r1=248; g1=250; b1=252;
-    r2=220; g2=38;  b2=38;
-    f = (t - 0.5) * 2;
-  }
-  return 'rgb('+Math.round(r1+(r2-r1)*f)+','+Math.round(g1+(g2-g1)*f)+','+Math.round(b1+(b2-b1)*f)+')';
+function corrColor(r){
+  r=Math.max(-1,Math.min(1,isNaN(r)?0:r));
+  var t=(r+1)/2;
+  var r1,g1,b1,r2,g2,b2,f;
+  if(t<=0.5){r1=37;g1=99;b1=235;r2=248;g2=250;b2=252;f=t*2;}
+  else{r1=248;g1=250;b1=252;r2=220;g2=38;b2=38;f=(t-0.5)*2;}
+  return'rgb('+Math.round(r1+(r2-r1)*f)+','+Math.round(g1+(g2-g1)*f)+','+Math.round(b1+(b2-b1)*f)+')';
 }
 """
 
@@ -448,12 +520,12 @@ function corrColor(r) {
     heatmap_calls = []
 
     for idx, (key, entry) in enumerate(sorted(matrices.items())):
-        n_parcels = entry.get("n_parcels", "—")
-        n_sites = entry.get("n_sites", "—")
+        n_parcels = entry.get("n_parcels", 0)
+        n_sites   = entry.get("n_sites", "—")
         n_subjects = entry.get("total_subjects", "—")
         matrix = entry.get("mean_correlation_matrix", [])
 
-        # Compute mean off-diagonal correlation for headline KPI
+        # Mean off-diagonal r
         mean_offdiag = None
         if matrix:
             total, count = 0.0, 0
@@ -468,48 +540,74 @@ function corrColor(r) {
 
         canvas_id = "heatmap_" + str(idx)
 
-        # Truncate matrix values to 4 decimal places for compact JSON
+        # Look up network labels for known atlases
+        nets = _resolve_networks(key, n_parcels)
+        nets_json = json.dumps(nets, separators=(",", ":")) if nets else "null"
+
         compact = [[round(v, 4) if isinstance(v, float) else v for v in row] for row in matrix]
         matrix_json = json.dumps(compact, separators=(",", ":"))
 
         kpi_row = (
             "<div class='kpi-row'>"
-            + _kpi("Parcels", str(n_parcels))
+            + _kpi("Parcels", str(n_parcels or "—"))
             + _kpi("Sites", str(n_sites))
             + _kpi("Subjects", str(n_subjects))
             + (_kpi("Mean Off-Diagonal r", "{:.4f}".format(mean_offdiag)) if mean_offdiag is not None else "")
             + "</div>"
         )
 
-        legend_html = (
-            "<div style='display:flex;align-items:center;gap:.5rem;margin-top:.6rem;font-size:.72rem;color:var(--text3)'>"
-            "<span style='display:inline-block;width:40px;height:10px;"
+        # Correlation gradient legend
+        corr_legend = (
+            "<div style='display:flex;align-items:center;gap:.5rem;margin-top:.5rem;font-size:.72rem;color:var(--text3)'>"
+            "<span style='display:inline-block;width:40px;height:9px;"
             "background:linear-gradient(to right,#2563eb,#f8fafc,#dc2626);border-radius:3px'></span>"
-            "<span>−1.0</span>"
-            "<span style='flex:1;text-align:center'>correlation</span>"
-            "<span>+1.0</span>"
+            "<span>−1.0</span><span style='flex:1;text-align:center'>correlation</span><span>+1.0</span>"
             "</div>"
         )
+
+        # Network legend chips
+        net_legend = ""
+        if nets:
+            seen: list = []
+            for name in nets:
+                if name not in seen:
+                    seen.append(name)
+            chips = "".join(
+                "<span style='display:inline-flex;align-items:center;gap:.3rem;font-size:.7rem;"
+                "background:var(--chip-bg);border:1px solid var(--border);border-radius:999px;"
+                "padding:.15rem .55rem'>"
+                "<span style='display:inline-block;width:8px;height:8px;border-radius:50%;"
+                "background:" + _NETWORK_COLORS.get(nm, "#94a3b8") + "'></span>"
+                + _esc(nm)
+                + "</span>"
+                for nm in seen
+            )
+            net_legend = (
+                "<div style='display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.65rem'>"
+                + chips + "</div>"
+            )
 
         card = (
             "<div class='stat-card' style='margin-bottom:1rem'>"
             "<div class='stat-card-header'>"
             "<span class='stat-card-title'>" + _esc(str(key)) + "</span>"
             "<span style='font-size:.75rem;color:var(--text3)'>"
-            + str(n_parcels) + " × " + str(n_parcels) + " correlation matrix</span>"
+            + str(n_parcels or "—") + " × " + str(n_parcels or "—") + " correlation matrix</span>"
             "</div>"
             "<div style='padding:.85rem 1.2rem'>"
             + kpi_row
             + "<div style='overflow-x:auto;margin-top:.75rem'>"
-            "<canvas id='" + canvas_id + "' style='max-width:100%;display:block;border:1px solid var(--border);border-radius:6px'>"
+            "<canvas id='" + canvas_id + "' style='max-width:100%;display:block;"
+            "border:1px solid var(--border);border-radius:6px'>"
             "Your browser does not support canvas.</canvas>"
             "</div>"
-            + legend_html
+            + corr_legend
+            + net_legend
             + "</div></div>"
         )
         cards.append(card)
         heatmap_calls.append(
-            "drawHeatmap('" + canvas_id + "'," + matrix_json + ");"
+            "drawHeatmap('" + canvas_id + "'," + matrix_json + "," + nets_json + ");"
         )
 
     script = (
@@ -517,10 +615,78 @@ function corrColor(r) {
         + _JS_HEATMAP
         + "window.addEventListener('load',function(){"
         + "".join(heatmap_calls)
-        + "});"
-        "</script>"
+        + "});</script>"
     )
     return "".join(cards) + script
+
+
+# ------------------------------------------------------------------ #
+# Atlas network label tables                                          #
+# ------------------------------------------------------------------ #
+
+_NETWORK_COLORS = {
+    # Schaefer 17-network → 7-network colours (Yeo-convention)
+    "Visual":         "#781286",
+    "Somatomotor":    "#4169e1",
+    "DorsAttn":       "#00760e",
+    "SalVentAttn":    "#c43aff",
+    "Limbic":         "#dcf8a4",
+    "Frontoparietal": "#e69422",
+    "Default":        "#cd3c14",
+    "Default Mode":   "#cd3c14",
+    # NeuroMark 1.0 domain colours
+    "SubCortical":    "#4d4d4d",
+    "Auditory":       "#e84d8a",
+    "SensoriMotor":   "#2166ac",
+    "CogCtrl":        "#1b7837",
+    "DMN":            "#d6604d",
+    "Cerebellar":     "#4dac26",
+}
+
+# Schaefer 2018 200-parcel 17-network → 7 broad networks
+# Derived from the templateflow MNI6Asym dseg.tsv (index 1-200 in order)
+_SCHAEFER_200_7NET = (
+    ["Visual"] * 12
+    + ["Somatomotor"] * 16
+    + ["DorsAttn"] * 11
+    + ["SalVentAttn"] * 11
+    + ["Limbic"] * 6
+    + ["Frontoparietal"] * 18
+    + ["Default"] * 26
+    # RH
+    + ["Visual"] * 12
+    + ["Somatomotor"] * 18
+    + ["DorsAttn"] * 11
+    + ["SalVentAttn"] * 15
+    + ["Limbic"] * 8
+    + ["Frontoparietal"] * 19
+    + ["Default"] * 17
+)
+
+# NeuroMark fMRI 1.0 — 53 components in 7 functional domains
+# Du et al. (2020) NeuroImage:Clinical 28:102375
+_NEUROMARK_1_0_DOMAINS = (
+    ["SubCortical"] * 5
+    + ["Auditory"] * 3
+    + ["SensoriMotor"] * 8
+    + ["Visual"] * 10
+    + ["CogCtrl"] * 13
+    + ["DMN"] * 9
+    + ["Cerebellar"] * 5
+)
+
+# Lookup: atlas key (from connectivity matrices dict) → parcel network list
+# Also keyed by n_parcels as integer fallback
+_PARCEL_NETWORKS: dict = {
+    # By key suffix (matches "*_atlas-Schaefer200*")
+    "connectivity_atlas-Schaefer200": _SCHAEFER_200_7NET,
+    # By parcel count fallback
+    200: _SCHAEFER_200_7NET,
+    53:  _NEUROMARK_1_0_DOMAINS,
+    # NeuroMark by key
+    "connectivity_atlas-NeuroMark1":   _NEUROMARK_1_0_DOMAINS,
+    "connectivity_atlas-NeuroMark1.0": _NEUROMARK_1_0_DOMAINS,
+}
 
 
 def _esc(s: str) -> str:

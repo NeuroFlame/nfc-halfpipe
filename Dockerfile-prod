@@ -27,7 +27,39 @@ shutil.copy(str(paths[0]), '/atlases/Schaefer2018_200Parcels_17Networks_order_FS
 print(f'Atlas installed from {paths[0]}')"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 3. Application code
+# 3. Download NeuroMark fMRI 1.0 and convert to a winner-takes-all integer
+#    parcellation atlas.
+#
+#    Source: Du et al. (2020) NeuroImage:Clinical 28:102375
+#    https://github.com/trendscenter/gift (GroupICAT toolkit)
+#
+#    The 4D NIfTI (X×Y×Z×53 Z-score maps) is converted by assigning each voxel
+#    to the IC with the highest absolute Z-score (threshold ≥ 1.5).
+#    Result: integer-labeled NIfTI saved as /atlases/NeuroMark_1.0_parcellation.nii.gz
+#    Compatible with the atlas_based_connectivity feature in halfpipe_spec.
+# ──────────────────────────────────────────────────────────────────────────────
+RUN /opt/conda/envs/fmriprep/bin/python3 -c "\
+import urllib.request, nibabel as nib, numpy as np, tempfile, os; \
+url = 'https://github.com/trendscenter/gift/raw/master/GroupICAT/icatb/icatb_templates/Neuromark_fMRI_1.0.nii'; \
+tmp = '/tmp/neuromark_1.0.nii'; \
+print('Downloading NeuroMark fMRI 1.0 ...'); \
+urllib.request.urlretrieve(url, tmp); \
+img = nib.load(tmp); \
+data = np.asarray(img.dataobj, dtype=np.float32); \
+n_ic = data.shape[-1]; \
+print(f'Loaded {n_ic} ICs, shape={data.shape}'); \
+abs_max = np.max(np.abs(data), axis=3); \
+best_ic = np.argmax(np.abs(data), axis=3).astype(np.int32) + 1; \
+parc = np.where(abs_max >= 1.5, best_ic, 0).astype(np.int32); \
+present = sorted(set(parc[parc > 0])); \
+print(f'Parcellation: {len(present)} ICs represented (threshold |Z|≥1.5)'); \
+out_img = nib.Nifti1Image(parc, img.affine, img.header); \
+nib.save(out_img, '/atlases/NeuroMark_1.0_parcellation.nii.gz'); \
+print('Saved /atlases/NeuroMark_1.0_parcellation.nii.gz'); \
+os.remove(tmp)"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. Application code
 # ──────────────────────────────────────────────────────────────────────────────
 COPY ./app/ /workspace/app/
 COPY ./system/entry_central.py /workspace/system/entry_central.py

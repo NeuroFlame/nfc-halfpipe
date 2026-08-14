@@ -37,6 +37,13 @@
         "suffix": "atlas",
         "tags": { "desc": "Schaefer200" },
         "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz"
+      },
+      {
+        "_note": "NeuroMark fMRI 1.0 winner-takes-all parcellation (53 ICs, 7 domains). Generated at image build time from the GIFT toolkit templates. Du et al. 2020 NeuroImage:Clinical.",
+        "datatype": "ref",
+        "suffix": "atlas",
+        "tags": { "desc": "NeuroMark1" },
+        "path": "/atlases/NeuroMark_1.0_parcellation.nii.gz"
       }
     ],
     "settings": [
@@ -63,6 +70,14 @@
         "setting": "default",
         "atlases": ["Schaefer200"],
         "min_region_coverage": 0.8
+      },
+      {
+        "_note": "NeuroMark 1.0 connectivity: 53x53 FC matrix between IC regions (7 functional domains). More interpretable than 200-parcel at a glance.",
+        "name": "neuromark",
+        "type": "atlas_based_connectivity",
+        "setting": "default",
+        "atlases": ["NeuroMark1"],
+        "min_region_coverage": 0.5
       }
     ],
     "models": []
