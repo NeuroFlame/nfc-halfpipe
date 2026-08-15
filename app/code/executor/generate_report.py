@@ -678,14 +678,18 @@ _NEUROMARK_1_0_DOMAINS = (
 # Lookup: atlas key (from connectivity matrices dict) → parcel network list
 # Also keyed by n_parcels as integer fallback
 _PARCEL_NETWORKS: dict = {
-    # By key suffix (matches "*_atlas-Schaefer200*")
+    # Schaefer 200-parcel — exact key emitted by HALFpipe
     "connectivity_atlas-Schaefer200": _SCHAEFER_200_7NET,
-    # By parcel count fallback
+    # NeuroMark — feature name is "neuromark", atlas tag is "NeuroMark1"
+    # so HALFpipe produces key "neuromark_atlas-NeuroMark1"
+    "neuromark_atlas-NeuroMark1":     _NEUROMARK_1_0_DOMAINS,
+    "neuromark_atlas-NeuroMark1.0":   _NEUROMARK_1_0_DOMAINS,
+    # Also cover a user who named the feature "connectivity"
+    "connectivity_atlas-NeuroMark1":  _NEUROMARK_1_0_DOMAINS,
+    "connectivity_atlas-NeuroMark1.0": _NEUROMARK_1_0_DOMAINS,
+    # Integer fallback (parcel count is unique for each atlas)
     200: _SCHAEFER_200_7NET,
     53:  _NEUROMARK_1_0_DOMAINS,
-    # NeuroMark by key
-    "connectivity_atlas-NeuroMark1":   _NEUROMARK_1_0_DOMAINS,
-    "connectivity_atlas-NeuroMark1.0": _NEUROMARK_1_0_DOMAINS,
 }
 
 
