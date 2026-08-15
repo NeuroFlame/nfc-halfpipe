@@ -421,6 +421,9 @@ def _build_connectivity_section(connectivity: dict) -> str:
         left and top axes (for known atlases: Schaefer 200-parcel 17-network and
         NeuroMark 1.0 53-component)
       - A network legend row below the heatmap
+      - For NeuroMark (53 parcels): glass-brain connectome with axial + sagittal
+        views, nodes placed at real MNI centroids, edges weighted by FC strength,
+        and an interactive threshold slider.
 
     Works for any matrix size; annotation bands appear only when the atlas is
     recognised by key name (atlas-Schaefer200, atlas-NeuroMark1) or parcel count.
@@ -432,7 +435,7 @@ def _build_connectivity_section(connectivity: dict) -> str:
         return "<p style='color:var(--text3);font-size:.85rem'>No connectivity data available.</p>"
 
     # ------------------------------------------------------------------ #
-    # Shared JS: heatmap + annotation bands                               #
+    # Shared JS: heatmap, annotation bands, and brain connectome view     #
     # ------------------------------------------------------------------ #
     _JS_HEATMAP = """\
 var _NET_COLORS={
@@ -462,7 +465,6 @@ function drawHeatmap(canvasId,data,networks){
   canvas.height=BAND+n*cell;
   if(n*cell<=maxPx)canvas.style.imageRendering='pixelated';
   var ctx=canvas.getContext('2d');
-  // Draw matrix
   for(var i=0;i<n;i++){
     for(var j=0;j<n;j++){
       ctx.fillStyle=corrColor(data[i][j]);
@@ -470,18 +472,14 @@ function drawHeatmap(canvasId,data,networks){
     }
   }
   if(!networks)return;
-  // Draw annotation bands
   var blocks=_getBlocks(networks);
   blocks.forEach(function(b){
     var color=_netColor(b.n);
     var start=b.s*cell;
     var len=(b.e-b.s+1)*cell;
-    // Left band (row axis)
     ctx.fillStyle=color;
     ctx.fillRect(0,BAND+start,BAND-1,len);
-    // Top band (column axis)
     ctx.fillRect(BAND+start,0,len,BAND-1);
-    // Network label in left band (rotated) if block is wide enough
     var blockPx=(b.e-b.s+1)*cell;
     if(blockPx>=18){
       ctx.save();
@@ -489,16 +487,13 @@ function drawHeatmap(canvasId,data,networks){
       ctx.rotate(-Math.PI/2);
       ctx.fillStyle='rgba(0,0,0,0.75)';
       ctx.font='bold '+(Math.min(9,blockPx/3))+'px sans-serif';
-      ctx.textAlign='center';
-      ctx.textBaseline='middle';
+      ctx.textAlign='center';ctx.textBaseline='middle';
       var lbl=b.n.length>9?b.n.slice(0,8)+'…':b.n;
       ctx.fillText(lbl,0,0);
       ctx.restore();
     }
   });
-  // Hairline separators between blocks
-  ctx.strokeStyle='rgba(0,0,0,0.25)';
-  ctx.lineWidth=1;
+  ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=1;
   blocks.forEach(function(b){
     if(b.s===0)return;
     var pos=BAND+b.s*cell-0.5;
@@ -516,14 +511,90 @@ function corrColor(r){
 }
 """
 
+    # Brain connectome JS (NeuroMark only) — inject centroids + domain list
+    _JS_BRAIN = (
+        "var _NM_CENTS="
+        + json.dumps(_NEUROMARK_CENTROIDS, separators=(",", ":"))
+        + ";var _NM_DOMS="
+        + json.dumps(list(_NEUROMARK_1_0_DOMAINS), separators=(",", ":"))
+        + """;
+var _NM_XR=[-80,80],_NM_YR=[-115,85],_NM_ZR=[-75,108];
+function redrawBrain(prefix){
+  var el=document.getElementById(prefix+'_thr');
+  var thr=el?parseFloat(el.value):0.3;
+  var mat=window['_brainMat_'+prefix];
+  if(!mat)return;
+  _drawBrainPanel(prefix+'_axial',mat,thr,'axial');
+  _drawBrainPanel(prefix+'_sag',mat,thr,'sag');
+}
+function _drawBrainPanel(cid,mat,thr,view){
+  var cvs=document.getElementById(cid);if(!cvs)return;
+  var ctx=cvs.getContext('2d');
+  var W=cvs.width,H=cvs.height,P=22;
+  var dark=document.documentElement.getAttribute('data-theme')==='dark'
+    ||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches
+       &&document.documentElement.getAttribute('data-theme')!=='light');
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle=dark?'#1e293b':'#f8fafc';ctx.fillRect(0,0,W,H);
+  /* brain outline */
+  ctx.save();
+  ctx.beginPath();ctx.ellipse(W/2,H/2,(W-2*P)*0.46,(H-2*P)*0.46,0,0,Math.PI*2);
+  ctx.setLineDash([4,3]);
+  ctx.strokeStyle=dark?'rgba(148,163,184,0.4)':'rgba(100,116,139,0.35)';
+  ctx.lineWidth=1.5;ctx.stroke();ctx.setLineDash([]);ctx.restore();
+  /* orientation labels */
+  var lc=dark?'#64748b':'#94a3b8';
+  ctx.fillStyle=lc;ctx.font='bold 9px sans-serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  if(view==='axial'){
+    ctx.fillText('A',W/2,P-7);ctx.fillText('P',W/2,H-P+7);
+    ctx.fillText('L',P-8,H/2);ctx.fillText('R',W-P+8,H/2);
+  }else{
+    ctx.fillText('A',W-P+8,H/2);ctx.fillText('P',P-8,H/2);
+    ctx.fillText('S',W/2,P-7);ctx.fillText('I',W/2,H-P+7);
+  }
+  /* coordinate → pixel */
+  function sc(c){
+    var sx,sy;
+    if(view==='axial'){
+      sx=P+(c[0]-_NM_XR[0])/(_NM_XR[1]-_NM_XR[0])*(W-2*P);
+      sy=H-P-(c[1]-_NM_YR[0])/(_NM_YR[1]-_NM_YR[0])*(H-2*P);
+    }else{
+      sx=P+(c[1]-_NM_YR[0])/(_NM_YR[1]-_NM_YR[0])*(W-2*P);
+      sy=H-P-(c[2]-_NM_ZR[0])/(_NM_ZR[1]-_NM_ZR[0])*(H-2*P);
+    }
+    return[sx,sy];
+  }
+  /* edges */
+  for(var i=0;i<53;i++){for(var j=i+1;j<53;j++){
+    var r=mat[i][j];if(Math.abs(r)<thr)continue;
+    var al=Math.pow((Math.abs(r)-thr)/(1-thr+0.001),0.6)*0.72;
+    var ec=r>0?'rgba(220,38,38,'+al+')':'rgba(37,99,235,'+al+')';
+    var p1=sc(_NM_CENTS[i]),p2=sc(_NM_CENTS[j]);
+    ctx.beginPath();ctx.moveTo(p1[0],p1[1]);ctx.lineTo(p2[0],p2[1]);
+    ctx.strokeStyle=ec;ctx.lineWidth=Math.max(0.5,Math.abs(r)*2.5);ctx.stroke();
+  }}
+  /* nodes (drawn on top of edges) */
+  for(var i=0;i<53;i++){
+    var p=sc(_NM_CENTS[i]);
+    ctx.beginPath();ctx.arc(p[0],p[1],4.5,0,Math.PI*2);
+    ctx.fillStyle=_netColor(_NM_DOMS[i]);ctx.fill();
+    ctx.strokeStyle=dark?'rgba(255,255,255,0.22)':'rgba(0,0,0,0.18)';
+    ctx.lineWidth=0.8;ctx.stroke();
+  }
+}
+"""
+    )
+
     cards = []
     heatmap_calls = []
+    brain_calls = []          # JS executed after page load for brain views
 
     for idx, (key, entry) in enumerate(sorted(matrices.items())):
-        n_parcels = entry.get("n_parcels", 0)
-        n_sites   = entry.get("n_sites", "—")
+        n_parcels  = entry.get("n_parcels", 0)
+        n_sites    = entry.get("n_sites", "—")
         n_subjects = entry.get("total_subjects", "—")
-        matrix = entry.get("mean_correlation_matrix", [])
+        matrix     = entry.get("mean_correlation_matrix", [])
 
         # Mean off-diagonal r
         mean_offdiag = None
@@ -558,10 +629,14 @@ function corrColor(r){
 
         # Correlation gradient legend
         corr_legend = (
-            "<div style='display:flex;align-items:center;gap:.5rem;margin-top:.5rem;font-size:.72rem;color:var(--text3)'>"
+            "<div style='display:flex;align-items:center;gap:.5rem;margin-top:.5rem;"
+            "font-size:.72rem;color:var(--text3)'>"
             "<span style='display:inline-block;width:40px;height:9px;"
-            "background:linear-gradient(to right,#2563eb,#f8fafc,#dc2626);border-radius:3px'></span>"
-            "<span>−1.0</span><span style='flex:1;text-align:center'>correlation</span><span>+1.0</span>"
+            "background:linear-gradient(to right,#2563eb,#f8fafc,#dc2626);"
+            "border-radius:3px'></span>"
+            "<span>−1.0</span>"
+            "<span style='flex:1;text-align:center'>correlation</span>"
+            "<span>+1.0</span>"
             "</div>"
         )
 
@@ -573,13 +648,12 @@ function corrColor(r){
                 if name not in seen:
                     seen.append(name)
             chips = "".join(
-                "<span style='display:inline-flex;align-items:center;gap:.3rem;font-size:.7rem;"
-                "background:var(--chip-bg);border:1px solid var(--border);border-radius:999px;"
-                "padding:.15rem .55rem'>"
+                "<span style='display:inline-flex;align-items:center;gap:.3rem;"
+                "font-size:.7rem;background:var(--chip-bg);border:1px solid var(--border);"
+                "border-radius:999px;padding:.15rem .55rem'>"
                 "<span style='display:inline-block;width:8px;height:8px;border-radius:50%;"
                 "background:" + _NETWORK_COLORS.get(nm, "#94a3b8") + "'></span>"
-                + _esc(nm)
-                + "</span>"
+                + _esc(nm) + "</span>"
                 for nm in seen
             )
             net_legend = (
@@ -587,12 +661,73 @@ function corrColor(r){
                 + chips + "</div>"
             )
 
+        # ------------------------------------------------------------ #
+        # Glass-brain connectome panel (NeuroMark / 53-parcel only)     #
+        # ------------------------------------------------------------ #
+        brain_html = ""
+        if n_parcels == 53 and nets is not None:
+            bp = "brain_" + str(idx)          # unique prefix per card
+            axial_id = bp + "_axial"
+            sag_id   = bp + "_sag"
+            brain_html = (
+                "<div style='margin-top:1.4rem;border-top:1px solid var(--border);"
+                "padding-top:1rem'>"
+                # header + slider
+                "<div style='display:flex;justify-content:space-between;"
+                "align-items:center;margin-bottom:.6rem'>"
+                "<span style='font-size:.82rem;font-weight:600;color:var(--text2)'>"
+                "Brain Connectome</span>"
+                "<label style='font-size:.75rem;color:var(--text3);"
+                "display:flex;align-items:center;gap:.4rem'>"
+                "Edge threshold r ≥"
+                "<input id='" + bp + "_thr' type='range' min='0.1' max='0.8'"
+                " step='0.05' value='0.3'"
+                " style='width:88px;accent-color:var(--primary)'"
+                " oninput=\"document.getElementById('" + bp + "_thrval')"
+                ".textContent=parseFloat(this.value).toFixed(2);"
+                "redrawBrain('" + bp + "')\">"
+                "<span id='" + bp + "_thrval' style='font-variant-numeric:tabular-nums;"
+                "min-width:2.5ch;text-align:right'>0.30</span>"
+                "</label></div>"
+                # two canvas panels
+                "<div style='display:grid;grid-template-columns:1fr 1fr;gap:.75rem'>"
+                "<div>"
+                "<div style='font-size:.68rem;color:var(--text3);text-align:center;"
+                "margin-bottom:.3rem'>Axial (top view)</div>"
+                "<canvas id='" + axial_id + "' width='260' height='230'"
+                " style='width:100%;border:1px solid var(--border);border-radius:6px;"
+                "display:block'></canvas>"
+                "</div>"
+                "<div>"
+                "<div style='font-size:.68rem;color:var(--text3);text-align:center;"
+                "margin-bottom:.3rem'>Sagittal (side view)</div>"
+                "<canvas id='" + sag_id + "' width='260' height='230'"
+                " style='width:100%;border:1px solid var(--border);border-radius:6px;"
+                "display:block'></canvas>"
+                "</div>"
+                "</div>"
+                # edge-color legend
+                "<div style='display:flex;align-items:center;gap:.6rem;margin-top:.5rem;"
+                "font-size:.7rem;color:var(--text3)'>"
+                "<span style='display:inline-block;width:24px;height:3px;"
+                "background:#dc2626;border-radius:2px'></span>positive"
+                "<span style='display:inline-block;width:24px;height:3px;"
+                "background:#2563eb;border-radius:2px;margin-left:.5rem'></span>negative"
+                "</div>"
+                "</div>"
+            )
+            brain_calls.append(
+                "window['_brainMat_" + bp + "']=" + matrix_json + ";"
+                "redrawBrain('" + bp + "');"
+            )
+
         card = (
             "<div class='stat-card' style='margin-bottom:1rem'>"
             "<div class='stat-card-header'>"
             "<span class='stat-card-title'>" + _esc(str(key)) + "</span>"
             "<span style='font-size:.75rem;color:var(--text3)'>"
-            + str(n_parcels or "—") + " × " + str(n_parcels or "—") + " correlation matrix</span>"
+            + str(n_parcels or "—") + " × " + str(n_parcels or "—")
+            + " correlation matrix</span>"
             "</div>"
             "<div style='padding:.85rem 1.2rem'>"
             + kpi_row
@@ -603,6 +738,7 @@ function corrColor(r){
             "</div>"
             + corr_legend
             + net_legend
+            + brain_html
             + "</div></div>"
         )
         cards.append(card)
@@ -613,8 +749,10 @@ function corrColor(r){
     script = (
         "<script>"
         + _JS_HEATMAP
+        + _JS_BRAIN
         + "window.addEventListener('load',function(){"
         + "".join(heatmap_calls)
+        + "".join(brain_calls)
         + "});</script>"
     )
     return "".join(cards) + script
@@ -674,6 +812,66 @@ _NEUROMARK_1_0_DOMAINS = (
     + ["DMN"] * 9
     + ["Cerebellar"] * 5
 )
+
+# NeuroMark fMRI 1.0 — MNI centroids (mm) for each of the 53 ICs
+# Computed from the winner-takes-all parcellation (|Z|≥1.5) using the
+# native 3 mm isotropic affine of Neuromark_fMRI_1.0.nii.
+# These are fixed for the published atlas and safe to hardcode.
+_NEUROMARK_CENTROIDS = [
+    [-0.3,   4.4,  12.4],  # IC  1  SubCortical
+    [ 0.0, -20.7,  -9.5],  # IC  2  SubCortical
+    [ 0.9,  -6.1,   4.4],  # IC  3  SubCortical
+    [ 1.4,  10.0,   0.3],  # IC  4  SubCortical
+    [ 3.0, -20.1,   3.1],  # IC  5  SubCortical
+    [ 3.8, -20.1,   4.3],  # IC  6  Auditory
+    [-2.6,  -3.9,   8.5],  # IC  7  Auditory
+    [ 2.0, -11.8,  23.8],  # IC  8  Auditory
+    [-25.7, -24.9,  41.8], # IC  9  SensoriMotor
+    [  1.0, -25.8,  51.2], # IC 10  SensoriMotor
+    [ 26.2, -23.1,  41.7], # IC 11  SensoriMotor
+    [  1.5, -40.8,  58.6], # IC 12  SensoriMotor
+    [  0.8,  -5.9,  50.5], # IC 13  SensoriMotor
+    [  0.9,  -7.4,  44.3], # IC 14  SensoriMotor
+    [  0.3, -61.0,  50.0], # IC 15  SensoriMotor
+    [ -2.1, -23.8,  42.6], # IC 16  SensoriMotor
+    [  1.5, -63.8,   9.9], # IC 17  Visual
+    [ -2.4, -89.7,  -3.2], # IC 18  Visual
+    [  4.7, -60.6,  11.5], # IC 19  Visual
+    [  3.0, -87.5,  22.6], # IC 20  Visual
+    [ 33.9, -71.5,   1.8], # IC 21  Visual
+    [  0.4, -42.5, -15.6], # IC 22  Visual
+    [-31.5, -75.2,   8.2], # IC 23  Visual
+    [ -0.2, -77.3,  -6.9], # IC 24  Visual
+    [ -9.1, -48.4, -12.1], # IC 25  Visual
+    [ 38.5, -17.0,  36.3], # IC 26  Visual
+    [  1.0,  19.1,   0.5], # IC 27  CogCtrl
+    [  0.7,  45.9,  31.4], # IC 28  CogCtrl
+    [-45.0,  29.7,   0.4], # IC 29  CogCtrl
+    [ 45.8,  -7.0,   9.0], # IC 30  CogCtrl
+    [  2.0,  14.9,  32.4], # IC 31  CogCtrl
+    [-12.3, -39.1,  28.3], # IC 32  CogCtrl
+    [ 43.7, -24.5,  36.6], # IC 33  CogCtrl
+    [-38.5, -18.2,  27.4], # IC 34  CogCtrl
+    [-20.4,  17.7,  48.8], # IC 35  CogCtrl
+    [ 11.0,  34.4,  32.7], # IC 36  CogCtrl
+    [ -0.4,  -9.1, -21.9], # IC 37  CogCtrl
+    [-43.8, -11.0,  30.9], # IC 38  CogCtrl
+    [ -1.3,  19.5,  35.6], # IC 39  CogCtrl
+    [ 34.4,  38.5,   4.4], # IC 40  DMN
+    [ -4.6,  46.1,   4.9], # IC 41  DMN
+    [  2.6, -29.9,   2.1], # IC 42  DMN
+    [ -0.5, -63.6,  36.4], # IC 43  DMN
+    [ -3.5, -51.1,  14.9], # IC 44  DMN
+    [  0.0,  37.3,   7.4], # IC 45  DMN
+    [  1.7, -25.6,  30.5], # IC 46  DMN
+    [ -0.3,  28.1, -16.4], # IC 47  DMN
+    [ -0.6, -47.7,  45.7], # IC 48  DMN
+    [-28.3, -25.7,  15.7], # IC 49  Cerebellar
+    [-21.6, -52.9, -43.0], # IC 50  Cerebellar
+    [ -7.3, -72.5, -34.4], # IC 51  Cerebellar
+    [  0.5, -46.6, -39.7], # IC 52  Cerebellar
+    [ 29.5, -59.5, -39.0], # IC 53  Cerebellar
+]
 
 # Lookup: atlas key (from connectivity matrices dict) → parcel network list
 # Also keyed by n_parcels as integer fallback
