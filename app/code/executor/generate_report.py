@@ -529,8 +529,15 @@ function redrawBrain(prefix){
 }
 function _drawBrainPanel(cid,mat,thr,view){
   var cvs=document.getElementById(cid);if(!cvs)return;
+  /* HiDPI / retina: scale canvas buffer by devicePixelRatio */
+  var dpr=window.devicePixelRatio||1;
+  var cssW=cvs.offsetWidth||260;
+  var cssH=Math.round(cssW*230/260);
+  cvs.width=Math.round(cssW*dpr);cvs.height=Math.round(cssH*dpr);
+  cvs.style.width=cssW+'px';cvs.style.height=cssH+'px';
   var ctx=cvs.getContext('2d');
-  var W=cvs.width,H=cvs.height,P=22;
+  ctx.scale(dpr,dpr);
+  var W=cssW,H=cssH,P=22;
   var dark=document.documentElement.getAttribute('data-theme')==='dark'
     ||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches
        &&document.documentElement.getAttribute('data-theme')!=='light');
@@ -694,25 +701,44 @@ function _drawBrainPanel(cid,mat,thr,view){
                 "<div>"
                 "<div style='font-size:.68rem;color:var(--text3);text-align:center;"
                 "margin-bottom:.3rem'>Axial (top view)</div>"
-                "<canvas id='" + axial_id + "' width='260' height='230'"
-                " style='width:100%;border:1px solid var(--border);border-radius:6px;"
+                "<canvas id='" + axial_id + "'"
+                " style='width:100%;aspect-ratio:260/230;"
+                "border:1px solid var(--border);border-radius:6px;"
                 "display:block'></canvas>"
                 "</div>"
                 "<div>"
                 "<div style='font-size:.68rem;color:var(--text3);text-align:center;"
                 "margin-bottom:.3rem'>Sagittal (side view)</div>"
-                "<canvas id='" + sag_id + "' width='260' height='230'"
-                " style='width:100%;border:1px solid var(--border);border-radius:6px;"
+                "<canvas id='" + sag_id + "'"
+                " style='width:100%;aspect-ratio:260/230;"
+                "border:1px solid var(--border);border-radius:6px;"
                 "display:block'></canvas>"
                 "</div>"
                 "</div>"
+                # domain color legend — explains node colors
+                + "".join([
+                    "<div style='margin-top:.65rem'>",
+                    "<div style='font-size:.68rem;font-weight:600;color:var(--text3);"
+                    "margin-bottom:.3rem'>Domains</div>",
+                    "<div style='display:flex;flex-wrap:wrap;gap:.3rem .55rem'>",
+                ] + [
+                    "<span style='display:inline-flex;align-items:center;gap:.28rem;"
+                    "font-size:.7rem;color:var(--text2)'>"
+                    "<span style='display:inline-block;width:9px;height:9px;"
+                    "border-radius:50%;flex-shrink:0;background:"
+                    + _NETWORK_COLORS.get(_d, "#94a3b8") + "'></span>"
+                    + _esc(_d) + "</span>"
+                    for _d in list(dict.fromkeys(_NEUROMARK_1_0_DOMAINS))  # unique, ordered
+                ] + ["</div></div>"])
                 # edge-color legend
-                "<div style='display:flex;align-items:center;gap:.6rem;margin-top:.5rem;"
-                "font-size:.7rem;color:var(--text3)'>"
-                "<span style='display:inline-block;width:24px;height:3px;"
-                "background:#dc2626;border-radius:2px'></span>positive"
-                "<span style='display:inline-block;width:24px;height:3px;"
-                "background:#2563eb;border-radius:2px;margin-left:.5rem'></span>negative"
+                + "<div style='display:flex;align-items:center;gap:.55rem;"
+                "margin-top:.5rem;font-size:.7rem;color:var(--text3)'>"
+                "<span style='font-size:.68rem;font-weight:600;color:var(--text3);"
+                "margin-right:.05rem'>Edges</span>"
+                "<span style='display:inline-block;width:22px;height:3px;"
+                "background:#dc2626;border-radius:2px'></span>positive r"
+                "<span style='display:inline-block;width:22px;height:3px;"
+                "background:#2563eb;border-radius:2px;margin-left:.4rem'></span>negative r"
                 "</div>"
                 "</div>"
             )
