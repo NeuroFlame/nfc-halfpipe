@@ -273,24 +273,39 @@ Add `"atlas_connectivity"` to `aggregation_types` to federate full functional co
 1. HALFpipe's `atlas_based_connectivity` feature extracts the mean BOLD time series for every parcel in the atlas, then computes the full N×N covariance and correlation matrix per subject.
 2. Each site's executor reads the per-subject `*_correlation_matrix.tsv` files, Fisher z-transforms each matrix (`atanh(r)`), and averages across subjects to produce a site-mean Fisher-z matrix.
 3. The server computes a subject-count-weighted mean across sites, then back-transforms (`tanh`) to produce the federated mean correlation matrix.
-4. The result appears in `global_results.json` under `connectivity.matrices` and is rendered as an interactive blue→white→red heatmap in `index.html`.
+4. The result appears in `global_results.json` under `connectivity.matrices` and is rendered in `index.html` as:
+   - An interactive blue→white→red **correlation heatmap** with colored network-annotation bands on both axes.
+   - For NeuroMark: a **glass-brain connectome** showing the 53 component nodes at their real MNI coordinates projected onto axial and sagittal views. Edges are colored red (positive FC) or blue (negative FC), with an interactive threshold slider.
 
-**Atlas options:**
+**Built-in atlases:**
 
-Any integer-labeled NIfTI parcellation atlas works. The Schaefer 2018 atlas (200 parcels, 17 networks) ships with the Docker image at `/atlases/`. To use a different atlas:
+Both atlases below are baked into the Docker image at build time and require no manual setup:
 
-| Atlas | Parcels | Notes |
-|---|---|---|
-| Schaefer 2018 (200-parcel, 17-network) | 200 | Baked into image at `/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz` |
-| NeuroMark 1.0 (53 ICs) | 53 | Derived from ICA; 7 functional network domains; winner-takes-all parcellation from Z-maps. Not yet in image — see below. |
-| NeuroMark 2.0 (105 ICs) | 105 | Higher-resolution ICA template. |
+| Atlas | Parcels | Location in image | Report features |
+|---|---|---|---|
+| Schaefer 2018 (200-parcel, 17-network) | 200 | `/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz` | Annotated heatmap with 7-network color bands (Yeo convention) |
+| NeuroMark fMRI 1.0 ([Du et al., 2020](https://doi.org/10.1016/j.nicl.2020.102375)) | 53 | `/atlases/NeuroMark_1.0_parcellation.nii.gz` | Annotated heatmap + glass-brain connectome with axial/sagittal views |
 
-**NeuroMark integration (planned):** NeuroMark ([Du et al., 2020](https://doi.org/10.1016/j.nicl.2020.102375)) is a data-driven ICA atlas from the TReNDS Center with 53 components organized in 7 functional network domains. Its 53×53 connectivity matrix naturally shows the block-diagonal network structure. To use it:
+The NeuroMark parcellation is generated at image build time from the published 4D Z-map NIfTI (downloaded from the [GIFT/trendscenter repository](https://github.com/trendscenter/gift)) using winner-takes-all assignment per voxel (threshold |Z| ≥ 1.5). The 53 ICs span 7 functional domains: SubCortical, Auditory, SensoriMotor, Visual, CogCtrl, DMN, Cerebellar.
 
-1. Obtain the NeuroMark 1.0 spatial maps (`NeuroMark_fMRI_1.0`) from [the TReNDS data portal](https://trendscenter.org/data/).
-2. Convert the 4D Z-map NIfTI to an integer-labeled parcellation (winner-takes-all per voxel).
-3. Add the parcellation NIfTI to the Docker image (e.g. at `/atlases/NeuroMark_1.0_parcellation.nii.gz`).
-4. Register it in the spec the same way as above, using `"desc": "NeuroMark1"` as the tag.
+To enable both atlases, add both features to `halfpipe_spec`:
+
+```json
+"files": [
+  { "datatype": "ref", "suffix": "atlas", "tags": { "desc": "Schaefer200" },
+    "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz" },
+  { "datatype": "ref", "suffix": "atlas", "tags": { "desc": "NeuroMark1" },
+    "path": "/atlases/NeuroMark_1.0_parcellation.nii.gz" }
+],
+"features": [
+  { "name": "connectivity", "type": "atlas_based_connectivity",
+    "setting": "default", "atlases": ["Schaefer200"], "min_region_coverage": 0.8 },
+  { "name": "neuromark",    "type": "atlas_based_connectivity",
+    "setting": "default", "atlases": ["NeuroMark1"],  "min_region_coverage": 0.5 }
+]
+```
+
+Any other integer-labeled NIfTI parcellation atlas also works; add it as a `ref` file with a unique `desc` tag and reference it in an `atlas_based_connectivity` feature.
 
 ---
 
