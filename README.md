@@ -61,6 +61,37 @@ python makeJob.py site1,site2,site3
 python debug.py job -w simulator_workspace -c site1,site2,site3
 ```
 
+---
+
+## Docker Development Setup
+
+> **Architecture note:** `Dockerfile-dev` is **Apple Silicon (M1/M2/M3/M4) only**.  
+> Linux x86\_64 users (HPC clusters, cloud VMs, Intel workstations) must use `Dockerfile-prod`.
+
+### Mac (Apple Silicon)
+
+```bash
+docker build -t nvflare-dev:latest -f Dockerfile-dev .
+./dockerRun.sh
+```
+
+First build compiles ANTs from source (~40–60 min); subsequent builds are cached.
+
+### Linux x86\_64 / amd64
+
+Use the production Dockerfile, tagged for local dev:
+
+```bash
+docker build -t nvflare-dev:latest -f Dockerfile-prod .
+./dockerRun.sh
+```
+
+`Dockerfile-prod` starts from the official `halfpipe/halfpipe:1.3.2` amd64 image — no source compilation needed, build time ~10–20 min depending on network.
+
+### Common error: `exec format error`
+
+If you see `exec /bin/sh: exec format error` during `docker build`, you are on Linux x86\_64 but trying to build `Dockerfile-dev` (ARM64). Switch to `Dockerfile-prod` as shown above.
+
 **4. Check results**
 
 ```

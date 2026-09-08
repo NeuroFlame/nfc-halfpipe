@@ -1,12 +1,23 @@
 # Dockerfile-dev — native linux/arm64 image for development on Apple Silicon.
 #
+# ⚠️  APPLE SILICON (M1/M2/M3/M4) ONLY.
+#     This file compiles ANTs from source for linux/arm64 and will FAIL with
+#     "exec format error" on any Linux x86_64 / amd64 machine.
+#
+#     If you are on Linux x86_64 (e.g. an HPC cluster), use Dockerfile-prod
+#     and tag it for local dev instead:
+#
+#       docker build -t nvflare-dev:latest -f Dockerfile-prod .
+#       ./dockerRun.sh
+#
 # Production uses Dockerfile-prod (linux/amd64, based on halfpipe/halfpipe:1.3.2).
 # This image targets local dev only: no Rosetta emulation, faster iteration.
 #
-#   Build:  docker build -t nfc-halfpipe:dev -f Dockerfile-dev .
-#           (first build ~40-60 min — ANTs compiles from source; subsequent
-#           builds are fast because the ANTs layer is cached)
-#   Run:    docker run --rm nfc-halfpipe:dev ...   (no --platform flag needed)
+#   Build (Mac only):
+#       docker build -t nvflare-dev:latest -f Dockerfile-dev .
+#       (first build ~40-60 min — ANTs compiles from source; subsequent
+#       builds are fast because the ANTs layer is cached)
+#   Run:  ./dockerRun.sh
 #
 # ── Design notes ─────────────────────────────────────────────────────────────
 # halfpipe 1.3.2 is pure Python (zero compiled .so extensions), so its source
