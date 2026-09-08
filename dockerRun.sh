@@ -11,7 +11,7 @@ echo "Using REMOTE_WORKSPACE: $REMOTE_WORKSPACE"
 # Run Docker, disabling path conversion on Windows
 MSYS_NO_PATHCONV=1 docker run --rm -it \
     --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
-    --name nvflare-dev \
+    --name nfc-halfpipe-dev \
     -v "$LOCAL_WORKSPACE:$REMOTE_WORKSPACE" \
     -w "$REMOTE_WORKSPACE" \
-    nvflare-dev:latest
+    nfc-halfpipe:dev

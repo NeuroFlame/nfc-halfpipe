@@ -71,7 +71,7 @@ python debug.py job -w simulator_workspace -c site1,site2,site3
 ### Mac (Apple Silicon)
 
 ```bash
-docker build -t nvflare-dev:latest -f Dockerfile-dev .
+docker build -t nfc-halfpipe:dev -f Dockerfile-dev .
 ./dockerRun.sh
 ```
 
@@ -82,7 +82,7 @@ First build compiles ANTs from source (~40–60 min); subsequent builds are cach
 Use the production Dockerfile, tagged for local dev:
 
 ```bash
-docker build -t nvflare-dev:latest -f Dockerfile-prod .
+docker build -t nfc-halfpipe:dev -f Dockerfile-prod .
 ./dockerRun.sh
 ```
 

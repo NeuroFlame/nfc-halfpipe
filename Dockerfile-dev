@@ -7,14 +7,14 @@
 #     If you are on Linux x86_64 (e.g. an HPC cluster), use Dockerfile-prod
 #     and tag it for local dev instead:
 #
-#       docker build -t nvflare-dev:latest -f Dockerfile-prod .
+#       docker build -t nfc-halfpipe:dev -f Dockerfile-prod .
 #       ./dockerRun.sh
 #
 # Production uses Dockerfile-prod (linux/amd64, based on halfpipe/halfpipe:1.3.2).
 # This image targets local dev only: no Rosetta emulation, faster iteration.
 #
 #   Build (Mac only):
-#       docker build -t nvflare-dev:latest -f Dockerfile-dev .
+#       docker build -t nfc-halfpipe:dev -f Dockerfile-dev .
 #       (first build ~40-60 min — ANTs compiles from source; subsequent
 #       builds are fast because the ANTs layer is cached)
 #   Run:  ./dockerRun.sh
