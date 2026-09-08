@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import shutil
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey
@@ -102,6 +103,19 @@ class HALFpipeExecutor(Executor):
             bids_directory=bids_directory,
         )
         self._halfpipe_result = halfpipe_result
+
+        # Copy HALFpipe's own QC report to the site's output directory so the
+        # site coordinator can open it alongside the federated index.html.
+        # The report lives at {workdir}/reports/ and is only present after a
+        # real (non-skipped) HALFpipe run.
+        halfpipe_reports_src = os.path.join(halfpipe_workdir, "reports")
+        if os.path.isdir(halfpipe_reports_src):
+            halfpipe_reports_dst = os.path.join(output_dir, "halfpipe_reports")
+            shutil.copytree(halfpipe_reports_src, halfpipe_reports_dst, dirs_exist_ok=True)
+            logging.info(f"HALFpipe QC report copied to {halfpipe_reports_dst}/index.html")
+        else:
+            logging.debug("No HALFpipe reports directory found (mock or skipped run)")
+
         # Persist so subsequent tasks (run in separate subprocesses by the simulator) can load it.
         _save_json(halfpipe_result, "halfpipe_result.json", fl_ctx)
 
