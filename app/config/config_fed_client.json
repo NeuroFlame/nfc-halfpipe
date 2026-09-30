@@ -2,20 +2,20 @@
   "format_version": 2,
   "executors": [
     {
-      "tasks": [
-        "RUN_HALFPIPE",
-        "SEND_ROI_VALUES",
-        "SEND_ATLAS_CONNECTIVITY",
-        "SEND_SITE_STATS",
-        "ACCEPT_GLOBAL_RESULTS"
-      ],
+      "tasks": [],
       "executor": {
-        "path": "executor.executor.HALFpipeExecutor",
+        "path": "runtime.executor.RuntimeExecutor",
         "args": {}
       }
     }
   ],
   "task_result_filters": [],
   "task_data_filters": [],
-  "components": []
+  "components": [
+    {
+      "id": "artifact_transfer",
+      "path": "framework.artifact_transfer.ArtifactTransfer",
+      "args": {}
+    }
+  ]
 }
