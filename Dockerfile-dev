@@ -101,7 +101,11 @@ RUN printf '#!/bin/sh\n'"'"'exec'"'"' /opt/conda/bin/python "$0" "$@"\n'"'"' '"'
 
 # ── 4. NVFlare venv (isolated from conda neuroimaging env) ───────────────────
 COPY ./requirements.txt /workspace/requirements.txt
-RUN python3 -m venv /opt/nfc-env && \
+# Python 3.11 for the venv: requirements.txt carries the boilerplate's
+# dependency pins, which target 3.11 (the base env here is 3.13).
+RUN conda create -y -p /opt/nfc-py311 python=3.11 && \
+    conda clean -afy && \
+    /opt/nfc-py311/bin/python -m venv /opt/nfc-env && \
     /opt/nfc-env/bin/pip install --upgrade pip setuptools && \
     /opt/nfc-env/bin/pip install -r /workspace/requirements.txt
 
