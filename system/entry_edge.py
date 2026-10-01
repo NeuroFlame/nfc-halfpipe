@@ -1,36 +1,61 @@
+"""Run a provisioned NVFlare edge node and report terminal failures."""
+
 import os
+import signal
 import subprocess
-import time
-import psutil
-import sys
+from types import FrameType
+from typing import Optional
 
-# The edge client mounts the site's BIDS directory at /workspace/data and
-# the results directory at /workspace/output. Set these as env vars so that
-# get_data_directory_path() and get_output_directory_path() resolve correctly
-# inside the container. setdefault preserves any value already injected by
-# the container runtime.
-os.environ.setdefault("DATA_DIR", "/workspace/data")
-os.environ.setdefault("OUTPUT_DIR", "/workspace/output")
+from framework.errors import emit_shared_error_summary, raise_for_terminal_errors
 
-print("Starting the shell script...")
-subprocess.Popen(["/bin/bash", "/workspace/runKit/startup/start.sh"])
+STARTUP_SCRIPT_PATH = "/workspace/runKit/startup/sub_start.sh"
+FORWARDED_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 
 
-time.sleep(10)
+def _run_client_once() -> subprocess.CompletedProcess:
+    """Run one NVFlare client attempt and forward shutdown signals to it."""
+    command = ["/bin/bash", STARTUP_SCRIPT_PATH, "--once"]
+    child = subprocess.Popen(command, start_new_session=True)
+    previous_handlers = {}
 
-print("Polling for nvflare process and printing process details for debugging...")
-while True:
-    process_found = False
-    for proc in psutil.process_iter(attrs=['cmdline']):
-        cmdline = ' '.join(proc.info['cmdline']
-                           ) if proc.info['cmdline'] else ''
-        if 'nvflare' in cmdline:
-            process_found = True
-            print("nvflare process is running...")
-            break
+    def forward_signal(signum: int, _frame: Optional[FrameType]) -> None:
+        """Forward a container signal while the NVFlare child is active."""
+        if child.poll() is None:
+            try:
+                os.killpg(child.pid, signum)
+            except ProcessLookupError:
+                pass
 
-    if process_found:
-        time.sleep(10)
-    else:
-        print("nvflare process is not running anymore or not found. Exiting.")
-        sys.exit(0)
+    try:
+        for signum in FORWARDED_SIGNALS:
+            previous_handlers[signum] = signal.signal(signum, forward_signal)
+        return subprocess.CompletedProcess(command, child.wait())
+    finally:
+        for signum, previous_handler in previous_handlers.items():
+            signal.signal(signum, previous_handler)
+
+
+def main():
+    """Run the edge startup process and preserve its exit status."""
+    completed_process = _run_client_once()
+    output_dir = os.getenv("OUTPUT_DIR", "/workspace/output")
+    try:
+        raise_for_terminal_errors(output_dir)
+    except Exception:
+        emit_shared_error_summary(
+            output_dir,
+            fallback_origin="site",
+            fallback_stage="execution",
+        )
+        raise
+    if completed_process.returncode:
+        emit_shared_error_summary(
+            output_dir,
+            fallback_origin="site",
+            fallback_stage="execution",
+        )
+    completed_process.check_returncode()
+
+
+if __name__ == "__main__":
+    main()

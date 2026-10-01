@@ -21,11 +21,7 @@
     {
       "id": "controller",
       "path": "runtime.controller.RuntimeController",
-      "args": {
-        "min_clients": 2,
-        "wait_time_after_min_received": 10,
-        "task_timeout": 0
-      }
+      "args": {}
     }
   ]
 }

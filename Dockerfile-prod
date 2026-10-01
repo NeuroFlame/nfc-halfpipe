@@ -5,10 +5,16 @@ FROM --platform=linux/amd64 halfpipe/halfpipe:1.3.2
 #    HALFpipe ships a conda-based environment; the venv prevents conflicts.
 #    The halfpipe console-script shebang is an absolute path so PATH-shadowing
 #    the venv Python does not affect it.
+#    The venv is built on Python 3.11 (HALFpipe's own env is 3.12) because
+#    requirements.txt carries the boilerplate's dependency pins, which target
+#    3.11. Leaving them unpinned pulled in a much newer gRPC whose TLS
+#    connection failed between NVFlare sites.
 # ──────────────────────────────────────────────────────────────────────────────
 WORKDIR /workspace/
 COPY ./requirements.txt /workspace/requirements.txt
-RUN python3 -m venv /opt/nfc-env && \
+RUN /opt/conda/bin/mamba create -y -p /opt/nfc-py311 python=3.11 && \
+    /opt/conda/bin/mamba clean -afy && \
+    /opt/nfc-py311/bin/python -m venv /opt/nfc-env && \
     /opt/nfc-env/bin/pip install --upgrade pip setuptools && \
     /opt/nfc-env/bin/pip install -r /workspace/requirements.txt
 

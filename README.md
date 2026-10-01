@@ -30,7 +30,7 @@ NeuroFLAME is designed to run on desktops, laptops, and HPC clusters. The Docker
 Docker on Apple Silicon runs Linux containers. fMRIPrep calls FSL FAST unconditionally for tissue segmentation (smriprep Stage 3), and FSL does not publish `linux/aarch64` binaries. Until fMRIPrep replaces that step or FSL ships an arm64 release, the production image (`linux/amd64`) must be used with Rosetta emulation on Apple Silicon:
 
 ```bash
-docker pull --platform linux/amd64 nfc-halfpipe:prod
+docker pull --platform linux/amd64 coinstacteam/nfc-halfpipe
 ```
 
 This works but is **3–5× slower** than native execution due to Rosetta's x86 JIT overhead.
@@ -58,7 +58,7 @@ python makeJob.py site1,site2,site3
 **3. Run the NVFlare simulator**
 
 ```bash
-python debug.py job -w simulator_workspace -c site1,site2,site3
+python debugger.py job -w simulator_workspace -c site1,site2,site3
 ```
 
 ---
@@ -135,7 +135,7 @@ nfc-halfpipe/
 │   ├── site2/data.json                # Site 2
 │   └── site3/data.json                # Site 3
 ├── makeJob.py                         # Creates job/ folder from app/ config
-├── debug.py                           # Launches NVFlare simulator
+├── debugger.py                           # Launches NVFlare simulator
 ├── Dockerfile-dev                     # Dev image (swap FROM for production HALFpipe image)
 └── display_notes.md                   # Platform-facing computation description
 ```
@@ -251,7 +251,7 @@ Uncomment the `nibabel` line in `requirements.txt` or add it to the Dockerfile.
 
 **5. Run the simulation inside Docker**
 
-When running `debug.py` inside the production container, override `PYTHONPATH` so the NVFlare simulator loads code from your mounted repo rather than the image's baked-in `/workspace/app/code/`:
+When running `debugger.py` inside the production container, override `PYTHONPATH` so the NVFlare simulator loads code from your mounted repo rather than the image's baked-in `/workspace/app/code/`:
 
 ```bash
 docker run --rm --platform linux/amd64 \
@@ -261,8 +261,8 @@ docker run --rm --platform linux/amd64 \
   -v "/path/to/output:/workspace/output" \
   -e "PYTHONPATH=/workspace/repo/app/code/" \
   -e "PARAMETERS_FILE_PATH=/workspace/repo/test_data/server/parameters_tier4test.json" \
-  nfc-halfpipe:prod \
-  /opt/nfc-env/bin/python3 /workspace/repo/debug.py /workspace/repo/job \
+  coinstacteam/nfc-halfpipe \
+  /opt/nfc-env/bin/python3 /workspace/repo/debugger.py /workspace/repo/job \
     -w /workspace/repo/simulator_workspace \
     -c site1
 ```
