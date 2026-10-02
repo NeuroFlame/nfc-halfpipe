@@ -11,6 +11,35 @@ Four aggregation modes are supported (and can be combined):
 | `atlas_connectivity` | Per-subject Fisher-z correlation matrices (one per atlas) | Federated mean correlation matrix in `global_results.json` + interactive heatmap in `index.html` |
 | `voxelwise_maps` | Within-site NIfTI stat maps | Weighted meta-analysis maps |
 | `subject_csv` | Nothing — files are written locally only | `Data.csv` + `Covariate.csv` per site, ready for [nfc-combatdc](../nfc-combatdc/) |
+| `fedlamp_export` | Nothing — files are written locally only | `FedLAMP_connectivity_Data.csv` + `FedLAMP_Covariate.csv` per site, ready for [nfc-fedlamp](../nfc-fedlamp/) |
+
+---
+
+## Intended Workflow
+
+nfc-halfpipe is designed as a **two-stage pipeline**: a lightweight federated analysis first, followed optionally by a deeper federated learning computation on the same outputs.
+
+**Stage 1 — Federated quality check and group-level summary**
+
+Run nfc-halfpipe with `qc_metadata`, `roi_values`, and `atlas_connectivity`. This produces:
+- A cross-site QC report (total subjects, motion statistics per site) that confirms the data is usable before committing to a longer analysis.
+- Weighted group-level connectivity maps and parcel means that give an interpretable preview of the signal across sites.
+
+If the QC is unacceptable (excessive motion, too few subjects) or the group-level maps show no meaningful signal, you can stop here without running a more expensive downstream computation.
+
+**Stage 2 — Deeper federated analysis (optional)**
+
+If Stage 1 looks good, add `fedlamp_export` to `aggregation_types`. This writes per-subject connectivity feature matrices locally at each site, ready for a downstream [nfc-fedlamp](../nfc-fedlamp/) computation that performs federated label-based dimensional prediction on the HALFpipe outputs.
+
+```
+nfc-halfpipe  →  federated QC + group connectivity (gate check)
+                 ↓ if data quality is sufficient
+              →  fedlamp_export (per-subject files, local only)
+                 ↓
+nfc-fedlamp   →  federated dimensional prediction
+```
+
+The two stages can run in sequence within a single nfc-halfpipe job by including all relevant modes in `aggregation_types` from the start, or as separate runs if you want to review Stage 1 results before committing.
 
 ---
 
