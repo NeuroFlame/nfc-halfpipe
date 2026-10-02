@@ -81,6 +81,8 @@ def send_roi_values(_incoming, parameters: dict, state: dict, output_dir: str, d
     Returns None when neither aggregation type is requested, which the server
     treats as a no-op for this site in the ROI aggregation step.
     """
+    if parameters.get("halfpipe_only"):
+        return None
     aggregation_types = _as_list(parameters.get("aggregation_types", []))
     if "roi_values" not in aggregation_types and "subject_csv" not in aggregation_types:
         return None
@@ -117,6 +119,8 @@ def send_atlas_connectivity(_incoming, parameters: dict, state: dict, data_dir: 
 
     Returns None when the aggregation type is not requested.
     """
+    if parameters.get("halfpipe_only"):
+        return None
     aggregation_types = _as_list(parameters.get("aggregation_types", []))
     if "atlas_connectivity" not in aggregation_types:
         return None
@@ -142,6 +146,8 @@ def send_site_stats(_incoming, parameters: dict, state: dict, output_dir: str, d
 
     Returns None when voxelwise_maps is not requested.
     """
+    if parameters.get("halfpipe_only"):
+        return None
     aggregation_types = _as_list(parameters.get("aggregation_types", []))
     if "voxelwise_maps" not in aggregation_types:
         return None

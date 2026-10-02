@@ -5,7 +5,7 @@
   "halfpipe_spec": {},
   "roi_extraction": {
     "_note": "Local templateflow cache path — matches the atlas baked into the prod Docker image.",
-    "atlas_path": "/Users/admin/.cache/templateflow/tpl-MNI152NLin2009cAsym/tpl-MNI152NLin2009cAsym_res-02_atlas-Schaefer2018_desc-200Parcels17Networks_dseg.nii.gz",
+    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz",
     "features": ["reho", "falff"]
   },
   "voxelwise_maps": {

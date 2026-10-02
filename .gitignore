@@ -1,7 +1,10 @@
 __pycache__/
 *.py[cod]
 simulator_workspace/
-test_output/simulate_job/
 poc-workspace/
+output/
 job/
 .DS_Store
+test_data/bids_download/
+test_data/halfpipe_workdir_*/
+license.txt

@@ -20,7 +20,11 @@ def _halfpipe_env() -> dict:
     raw = env.get("PYTHONPATH", "")
     if raw:
         clean = ":".join(
-            p for p in raw.split(":") if p and "nfc-env" not in p and "/opt/conda/lib/python" not in p
+            p for p in raw.split(":")
+            if p
+            and "nfc-env" not in p
+            and "nfc-py311" not in p
+            and "/opt/conda/lib/python" not in p
         )
         if clean:
             env["PYTHONPATH"] = clean
