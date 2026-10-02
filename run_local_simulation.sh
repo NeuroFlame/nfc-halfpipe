@@ -161,10 +161,25 @@ docker run "${DOCKER_ARGS[@]}" \
 
 OUTPUT_DIR="$LOCAL_WORKSPACE/output"
 echo
-echo "Simulation output ($OUTPUT_DIR):"
-if [[ -d "$OUTPUT_DIR" ]]; then
-    find "$OUTPUT_DIR" -maxdepth 2 -type f | sort
-else
+echo "Simulation output:"
+if [[ ! -d "$OUTPUT_DIR" ]]; then
     echo "No output directory found at $OUTPUT_DIR" >&2
     exit 1
 fi
+
+# Server-level outputs (global_results, aggregator log) live at the base
+echo
+echo "[server]"
+find "$OUTPUT_DIR" -maxdepth 1 -type f | sort
+
+# Per-site outputs in subdirectories
+for site in "${SITES[@]}"; do
+    site_dir="$OUTPUT_DIR/$site"
+    if [[ -d "$site_dir" ]]; then
+        echo
+        echo "[$site]"
+        find "$site_dir" -maxdepth 2 -type f | sort
+    else
+        echo "[$site] no output directory found (expected $site_dir)" >&2
+    fi
+done

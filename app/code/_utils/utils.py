@@ -50,12 +50,16 @@ def get_output_directory_path(fl_ctx: FLContext) -> str:
     job_id = fl_ctx.get_job_id()
     site_name = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
 
-    # Check if the environment variable OUTPUT_DIR is set
+    # Check if the environment variable OUTPUT_DIR is set.
+    # Append the site name so each site writes to its own subdirectory
+    # (OUTPUT_DIR/site1/, OUTPUT_DIR/site2/, …) even when all sites share
+    # the same base OUTPUT_DIR in a single-container simulation.
     env_path = os.getenv("OUTPUT_DIR")
     if env_path:
-        os.makedirs(env_path, exist_ok=True)
-        logging.info(f"Output directory path from environment: {env_path}")
-        return env_path
+        site_path = os.path.join(env_path, site_name) if site_name else env_path
+        os.makedirs(site_path, exist_ok=True)
+        logging.info(f"Output directory path from environment: {site_path}")
+        return site_path
 
     # If OUTPUT_DIR is not set, use the simulator and poc path
     repo_root_path = find_repo_root_path()
