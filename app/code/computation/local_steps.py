@@ -11,6 +11,7 @@ from executor.run_halfpipe import run_halfpipe_and_get_qc
 from executor.extract_qc_metadata import extract_qc_metadata
 from executor.extract_roi_values import extract_roi_values, write_subject_roi_csv
 from executor.extract_connectivity import extract_connectivity_matrices
+from executor.write_fedlamp_export import write_fedlamp_connectivity_csv
 from executor.run_site_group_level import run_site_group_level
 
 
@@ -114,20 +115,41 @@ def send_roi_values(_incoming, parameters: dict, state: dict, output_dir: str, d
 # Phase 2b — Atlas connectivity                                        #
 # ------------------------------------------------------------------ #
 
-def send_atlas_connectivity(_incoming, parameters: dict, state: dict, data_dir: str):
+def send_atlas_connectivity(_incoming, parameters: dict, state: dict, output_dir: str, data_dir: str):
     """Extract atlas-based connectivity matrices if atlas_connectivity is enabled.
 
-    Returns None when the aggregation type is not requested.
+    Also writes per-subject connectivity CSVs for Fed-LAMP when fedlamp_export
+    is in aggregation_types. The two modes are independent — either or both can
+    be requested.
+
+    Returns None when neither atlas_connectivity nor fedlamp_export is requested.
     """
     if parameters.get("halfpipe_only"):
         return None
     aggregation_types = _as_list(parameters.get("aggregation_types", []))
-    if "atlas_connectivity" not in aggregation_types:
+    want_federation = "atlas_connectivity" in aggregation_types
+    want_fedlamp = "fedlamp_export" in aggregation_types
+
+    if not want_federation and not want_fedlamp:
         return None
 
     site_data = _read_site_data(data_dir)
+    derivatives_path = state.get("derivatives_path")
+
+    if want_fedlamp:
+        write_fedlamp_connectivity_csv(
+            derivatives_path=derivatives_path,
+            site_data=site_data,
+            params=parameters,
+            output_dir=output_dir,
+            bids_directory=site_data.get("bids_directory") or data_dir,
+        )
+
+    if not want_federation:
+        return None
+
     connectivity = extract_connectivity_matrices(
-        derivatives_path=state.get("derivatives_path"),
+        derivatives_path=derivatives_path,
         site_data=site_data,
         params=parameters,
     )

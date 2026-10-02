@@ -29,6 +29,18 @@
         "suffix": "epi",
         "tags": { "dir": "PA", "run": "1" },
         "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-PA_run-1_epi.nii.gz"
+      },
+      {
+        "datatype": "ref",
+        "suffix": "atlas",
+        "tags": { "desc": "Schaefer200" },
+        "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz"
+      },
+      {
+        "datatype": "ref",
+        "suffix": "atlas",
+        "tags": { "desc": "NeuroMark1" },
+        "path": "/atlases/NeuroMark_1.0_parcellation.nii.gz"
       }
     ],
     "settings": [
@@ -47,7 +59,21 @@
     ],
     "features": [
       { "name": "reho",  "type": "reho",  "setting": "default", "smoothing": null },
-      { "name": "falff", "type": "falff", "setting": "default", "unfiltered_setting": "unfiltered", "smoothing": null }
+      { "name": "falff", "type": "falff", "setting": "default", "unfiltered_setting": "unfiltered", "smoothing": null },
+      {
+        "name": "connectivity",
+        "type": "atlas_based_connectivity",
+        "setting": "default",
+        "atlases": ["Schaefer200"],
+        "min_region_coverage": 0.8
+      },
+      {
+        "name": "neuromark",
+        "type": "atlas_based_connectivity",
+        "setting": "default",
+        "atlases": ["NeuroMark1"],
+        "min_region_coverage": 0.5
+      }
     ],
     "models": []
   },

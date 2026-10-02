@@ -340,6 +340,40 @@ Any other integer-labeled NIfTI parcellation atlas also works; add it as a `ref`
 
 ---
 
+## Chaining with nfc-fedlamp
+
+Add `"fedlamp_export"` to `aggregation_types` to produce per-subject connectivity feature files that a downstream [nfc-fedlamp](../nfc-fedlamp/) computation can consume directly.
+
+```json
+"aggregation_types": ["qc_metadata", "fedlamp_export"],
+"fedlamp_config": {
+  "connectivity_data_file": "FedLAMP_connectivity_Data.csv",
+  "covariate_file": "FedLAMP_Covariate.csv"
+}
+```
+
+Nothing is sent across sites. Each site writes two files locally:
+
+| File | Contents |
+|---|---|
+| `FedLAMP_connectivity_Data.csv` | One row per subject. Columns are the upper triangle of each subject's correlation matrix for every atlas, named `{feature_key}_{i:03d}x{j:03d}` (i < j, 1-indexed). Multiple atlases are concatenated in sorted key order. |
+| `FedLAMP_Covariate.csv` | Per-subject demographics and QC, row-aligned with the data file. Same format as `Covariate.csv` — `subject_id`, all BIDS `participants.tsv` columns, and HALFpipe QC metrics (`mean_fd`, `mean_fd_perc`, `mean_gm_tsnr`). |
+
+`fedlamp_export` requires `atlas_based_connectivity` features in `halfpipe_spec` so that per-subject `*_correlation_matrix.tsv` files are produced. It can run independently of `atlas_connectivity` (the federated mean); either or both can appear in `aggregation_types`.
+
+Set nfc-fedlamp's `parameters.json`:
+
+```json
+{
+  "data_file":      "FedLAMP_connectivity_Data.csv",
+  "covariate_file": "FedLAMP_Covariate.csv"
+}
+```
+
+Point nfc-fedlamp's data directory at nfc-halfpipe's output directory for each site.
+
+---
+
 ## Chaining with nfc-combatdc
 
 Add `"subject_csv"` to `aggregation_types` to produce per-site input files for [nfc-combatdc](../nfc-combatdc/):
@@ -390,12 +424,13 @@ Phase 2a → SEND_ROI_VALUES (if "roi_values" or "subject_csv" in aggregation_ty
              site [subject_csv]: write Data.csv + Covariate.csv locally (nothing sent)
              server [roi_values]: store ROI values per site
 
-Phase 2b → SEND_ATLAS_CONNECTIVITY (if "atlas_connectivity" in aggregation_types)
-             site: load per-subject correlation matrix TSVs from halfpipe derivatives
-                   apply Fisher z-transform → compute site-mean Fisher-z matrix
-                   send {atlas_key → mean_fisher_z_matrix, n_subjects} to server
-             server: weighted-average Fisher-z matrices across sites → tanh back-transform
-                     → federated mean correlation matrix per atlas
+Phase 2b → SEND_ATLAS_CONNECTIVITY (if "atlas_connectivity" or "fedlamp_export" in aggregation_types)
+             site [fedlamp_export]:      write FedLAMP_connectivity_Data.csv + FedLAMP_Covariate.csv
+                                         locally (per-subject upper-triangle features; nothing sent)
+             site [atlas_connectivity]:  apply Fisher z-transform → compute site-mean Fisher-z matrix
+                                         send {atlas_key → mean_fisher_z_matrix, n_subjects} to server
+             server [atlas_connectivity]: weighted-average Fisher-z matrices across sites → tanh
+                                          back-transform → federated mean correlation matrix per atlas
 
 Phase 2c → SEND_SITE_STATS (if "voxelwise_maps" in aggregation_types)
              site: run halfpipe group-level → compress NIfTI maps
