@@ -60,6 +60,7 @@ def run_halfpipe(site_data: dict, parameters: dict, output_dir: str, data_dir: s
     if os.path.isdir(halfpipe_reports_src):
         halfpipe_reports_dst = os.path.join(output_dir, "halfpipe_reports")
         shutil.copytree(halfpipe_reports_src, halfpipe_reports_dst, dirs_exist_ok=True)
+        _repair_halfpipe_report_js(halfpipe_reports_dst)
         logging.info("HALFpipe QC report copied to %s/index.html", halfpipe_reports_dst)
     else:
         logging.debug("No HALFpipe reports directory found (mock or skipped run)")
@@ -220,3 +221,150 @@ def _read_site_data(data_dir: str) -> dict:
         return {}
     with open(data_path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def _repair_halfpipe_report_js(reports_dir: str) -> None:
+    """Populate stub report*.js files from reportvals.txt and SVG figures.
+
+    HALFpipe writes placeholder ``report('[]\n');`` stubs into each .js data
+    file and is supposed to fill them at the end of the run.  When that final
+    collect step is skipped (e.g. an interrupted container), the stubs remain
+    and the report renders blank.  This function regenerates them from the data
+    that HALFpipe *did* write: reportvals.txt and per-subject SVG figures.
+    """
+    import glob
+    import hashlib
+    import re
+
+    STUB = b"report('[]"  # first 10 bytes of every placeholder
+
+    def _is_stub(path: str) -> bool:
+        try:
+            with open(path, "rb") as fh:
+                return fh.read(10) == STUB
+        except OSError:
+            return False
+
+    def _write_js(path: str, records: list) -> None:
+        payload = json.dumps(records, indent=4, ensure_ascii=False)
+        # HALFpipe escapes newlines inside the JS string literal
+        payload_escaped = payload.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\\n")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("report('" + payload_escaped + "\\\n');\n")
+
+    # ---- helpers for reportvals.txt (space-padded tabulate format) ----
+    # These HALFpipe fields must stay as strings even when they look numeric
+    _STR_KEYS = {"sub", "task", "run", "halfpipe_version"}
+
+    def _parse_vals_txt(path: str) -> list:
+        records = []
+        with open(path) as fh:
+            lines = fh.readlines()
+        # First non-blank line is the header; skip separator lines (start with -)
+        header: list = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("-"):
+                continue
+            tokens = stripped.split()
+            if not header:
+                header = tokens
+                continue
+            if len(tokens) < len(header):
+                tokens += [""] * (len(header) - len(tokens))
+            rec: dict = {}
+            for key, raw in zip(header, tokens):
+                raw = raw.strip()
+                if key in _STR_KEYS:
+                    rec[key] = raw
+                elif raw.startswith("[") and raw.endswith("]"):
+                    try:
+                        rec[key] = json.loads(raw)
+                    except Exception:
+                        rec[key] = raw
+                elif raw.lower() in ("true", "false"):
+                    rec[key] = raw.lower() == "true"
+                else:
+                    try:
+                        rec[key] = int(raw)
+                    except ValueError:
+                        try:
+                            rec[key] = float(raw)
+                        except ValueError:
+                            rec[key] = raw
+            if rec:
+                records.append(rec)
+        return records
+
+    # ---- reportvals.js -----------------------------------------------
+    vals_txt = os.path.join(reports_dir, "reportvals.txt")
+    vals_js  = os.path.join(reports_dir, "reportvals.js")
+    if _is_stub(vals_js) and os.path.exists(vals_txt):
+        try:
+            records = _parse_vals_txt(vals_txt)
+            _write_js(vals_js, records)
+            logging.info("Repaired %s (%d subjects)", vals_js, len(records))
+        except Exception as exc:
+            logging.warning("Could not repair reportvals.js: %s", exc)
+
+    # ---- reportimgs.js -----------------------------------------------
+    imgs_js = os.path.join(reports_dir, "reportimgs.js")
+    if _is_stub(imgs_js):
+        # Pattern: sub-<ID>[_task-<task>_run-<run>]_<desc>.svg
+        pat = re.compile(
+            r"sub-(?P<sub>[^_/]+)"
+            r"(?:_task-(?P<task>[^_]+)_run-(?P<run>[^_]+))?"
+            r"_(?P<desc>.+)\.svg$"
+        )
+        img_records = []
+        for svg_path in sorted(glob.glob(os.path.join(reports_dir, "sub-*/figures/*.svg"))):
+            fname = os.path.basename(svg_path)
+            m = pat.match(fname)
+            if not m:
+                continue
+            rel_path = os.path.relpath(svg_path, reports_dir)
+            try:
+                with open(svg_path, "rb") as fh:
+                    file_hash = hashlib.md5(fh.read()).hexdigest()
+            except OSError:
+                file_hash = ""
+            rec: dict = {
+                "desc": m.group("desc"),
+                "hash": file_hash,
+                "path": rel_path.replace(os.sep, "/"),
+                "sourcefiles": [],
+                "sub": m.group("sub"),
+            }
+            if m.group("task"):
+                rec["task"] = m.group("task")
+            if m.group("run"):
+                rec["run"] = m.group("run")
+            img_records.append(rec)
+        if img_records:
+            try:
+                _write_js(imgs_js, img_records)
+                logging.info("Repaired %s (%d figures)", imgs_js, len(img_records))
+            except Exception as exc:
+                logging.warning("Could not repair reportimgs.js: %s", exc)
+
+    # ---- reportpreproc.js --------------------------------------------
+    preproc_js = os.path.join(reports_dir, "reportpreproc.js")
+    if _is_stub(preproc_js) and os.path.exists(vals_txt):
+        try:
+            rows = _parse_vals_txt(vals_txt)
+            preproc_records = []
+            seen: set = set()
+            for row in rows:
+                sub  = str(row.get("sub", "")).strip()
+                task = str(row.get("task", "rest")).strip()
+                run  = str(row.get("run", "1")).strip()
+                key  = (sub, task, run)
+                if key in seen or not sub:
+                    continue
+                seen.add(key)
+                preproc_records.append({"run": run, "status": "done", "sub": sub, "task": task})
+            if preproc_records:
+                _write_js(preproc_js, preproc_records)
+                logging.info("Repaired %s (%d runs)", preproc_js, len(preproc_records))
+        except Exception as exc:
+            logging.warning("Could not repair reportpreproc.js: %s", exc)
