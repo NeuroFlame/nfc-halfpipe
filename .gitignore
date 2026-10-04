@@ -7,4 +7,5 @@ job/
 .DS_Store
 test_data/bids_download/
 test_data/halfpipe_workdir_*/
+test_data/site*_real/
 license.txt

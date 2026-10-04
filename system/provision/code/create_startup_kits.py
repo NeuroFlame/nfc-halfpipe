@@ -2,6 +2,7 @@
 
 import logging
 import os
+import shutil
 import subprocess
 
 # Set up logging
@@ -17,7 +18,6 @@ def create_startup_kits(project_file_path: str, output_directory: str) -> None:
         project_file_path,
         "-w",
         output_directory,
-        "--force",
     ]
 
     try:
@@ -25,9 +25,15 @@ def create_startup_kits(project_file_path: str, output_directory: str) -> None:
         logger.info(f"Project file path: {project_file_path}")
         logger.info(f"Output directory: {output_directory}")
 
-        # Ensure output directory exists
-        if not os.path.exists(output_directory):
-            os.makedirs(output_directory)
+        # Ensure output directory exists and is clean.  Using --force in the
+        # nvflare provision command causes a second provisioning pass that mixes
+        # certificates from two different CAs.  Cleaning the project directory
+        # first avoids that entirely.
+        project_dir = os.path.join(output_directory, "project")
+        if os.path.exists(project_dir):
+            logger.info(f"Removing existing project directory {project_dir} before provisioning")
+            shutil.rmtree(project_dir)
+        os.makedirs(output_directory, exist_ok=True)
 
         # Log that the provision command is starting
         logger.info("Starting provision command...")
@@ -65,8 +71,21 @@ def create_startup_kits(project_file_path: str, output_directory: str) -> None:
         return_code = process.wait()
 
         if return_code != 0:
-            logger.error(f"Provision command failed with return code {return_code}")
-            raise subprocess.CalledProcessError(return_code, provision_command)
+            # NVFlare's provisioner sometimes exits with code 5 after writing all
+            # startup kits successfully — it errors during a post-provisioning
+            # cleanup step that tries to access the wip/ directory which has
+            # already been renamed to prod_00/.  Check whether the output looks
+            # complete before treating this as a hard failure.
+            prod_dir = os.path.join(output_directory, "project", "prod_00")
+            if os.path.isdir(prod_dir):
+                logger.warning(
+                    f"nvflare provision exited with code {return_code} but "
+                    f"output directory {prod_dir} exists — treating as success. "
+                    "This is a known NVFlare post-provisioning cleanup bug."
+                )
+            else:
+                logger.error(f"Provision command failed with return code {return_code}")
+                raise subprocess.CalledProcessError(return_code, provision_command)
 
         logger.info("Provisioning completed successfully.")
 

@@ -67,7 +67,7 @@ def extract_connectivity_matrices(
         )
 
     root = Path(derivatives_path)
-    corr_files = list(root.rglob("*_correlation_matrix.tsv"))
+    corr_files = list(root.rglob("*_desc-correlation_matrix.tsv"))
 
     if not corr_files:
         logging.warning(
@@ -80,7 +80,7 @@ def extract_connectivity_matrices(
     grouped: dict = {}
     for path in corr_files:
         m = re.search(
-            r"_feature-([^_]+)_atlas-([^_]+)_correlation_matrix\.tsv$",
+            r"_feature-([^_]+)_atlas-([^_]+)_desc-correlation_matrix\.tsv$",
             path.name,
         )
         if not m:

@@ -1,0 +1,64 @@
+{
+  "_note": "Edge / NeuroFLAME CLI test. Runs real HALFpipe on resting-state BIDS data (ds003768, task-rest run-1). Each site's BIDS root is the DATA_DIR mount (/workspace/data/). FreeSurfer license must be placed in each site's data directory as 'license.txt' before running.",
+  "run_halfpipe": true,
+  "fs_license_path": "/workspace/data/license.txt",
+  "n_procs": 2,
+  "aggregation_types": ["qc_metadata", "roi_values", "atlas_connectivity"],
+  "halfpipe_spec": {
+    "files": [
+      {
+        "datatype": "func",
+        "suffix": "bold",
+        "tags": {"task": "rest", "run": "1"},
+        "path": "{bids_directory}/sub-{sub}/func/sub-{sub}_task-rest_run-1_bold.nii.gz"
+      },
+      {
+        "datatype": "anat",
+        "suffix": "T1w",
+        "tags": {},
+        "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_T1w.nii.gz"
+      },
+      {
+        "datatype": "ref",
+        "suffix": "atlas",
+        "tags": {"desc": "Schaefer200"},
+        "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz"
+      }
+    ],
+    "settings": [
+      {
+        "name": "default",
+        "ica_aroma": false,
+        "bandpass_filter": {"type": "gaussian", "lp_width": 125.0},
+        "smoothing": {"fwhm": 6.0},
+        "grand_mean_scaling": {"mean": 10000.0}
+      },
+      {
+        "name": "unfiltered",
+        "ica_aroma": false,
+        "grand_mean_scaling": {"mean": 10000.0}
+      }
+    ],
+    "features": [
+      {"name": "reho",  "type": "reho",  "setting": "default", "smoothing": null},
+      {"name": "falff", "type": "falff", "setting": "default", "unfiltered_setting": "unfiltered", "smoothing": null},
+      {
+        "name": "connectivity",
+        "type": "atlas_based_connectivity",
+        "setting": "default",
+        "atlases": ["Schaefer200"],
+        "min_region_coverage": 0.8
+      }
+    ],
+    "models": []
+  },
+  "roi_extraction": {
+    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz",
+    "features": ["reho", "falff"]
+  },
+  "voxelwise_maps": {
+    "spreadsheet": null,
+    "covariates": []
+  },
+  "min_subjects": 1
+}

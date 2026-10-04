@@ -85,13 +85,14 @@ def main():
         session = new_secure_session(
             ADMIN_USER_EMAIL,
             ADMIN_DIRECTORY_PATH,
+            timeout=120.0,
         )
         failure_stage = "controller_execution"
         public_stage = "execution"
         job_id = session.submit_job(JOB_DIRECTORY_PATH)
         job_meta = session.wait_for_job(
             job_id,
-            timeout=3600,
+            timeout=86400,
             poll_interval=10,
         )
         job_status = job_meta[JobMetaKey.STATUS.value]

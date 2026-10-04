@@ -1,0 +1,16 @@
+{
+  "_note": "Edge / NeuroFLAME CLI mock test. Skips HALFpipe; uses mock_derivatives from each site's data.json to exercise the full NVFlare federation loop (QC aggregation, ROI values, atlas connectivity). Use this when site data directories contain synthetic NIfTI stubs.",
+  "run_halfpipe": false,
+  "aggregation_types": ["qc_metadata", "roi_values", "atlas_connectivity"],
+  "halfpipe_spec": {},
+  "roi_extraction": {
+    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz",
+    "features": ["reho", "falff"]
+  },
+  "voxelwise_maps": {
+    "spreadsheet": null,
+    "covariates": []
+  },
+  "min_subjects": 1,
+  "n_procs": 1
+}

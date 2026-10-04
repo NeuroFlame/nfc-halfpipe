@@ -11,25 +11,16 @@ _HALFPIPE_TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M"
 
 
 def _halfpipe_env() -> dict:
-    # NVFlare's SimulatorRunner builds PYTHONPATH from the full sys.path, which
-    # includes nfc-env site-packages (numpy 2.5). Halfpipe's conda Python then
-    # finds numpy 2.5 via PYTHONPATH before its own conda numpy, causing numba
-    # to fail ("Numba needs NumPy 2.3 or less"). Strip nfc-env paths so
-    # halfpipe sees only its own conda environment.
+    # Halfpipe uses its own conda Python. Any paths we put in PYTHONPATH for
+    # the NFC computation (nfc-env, nfc-py311, /workspace/app/code, /local/custom)
+    # are NFC-internal and must not leak into halfpipe's Python initialisation.
+    # When halfpipe's Python 3.12 starts, it processes .pth files in its own
+    # site-packages; if PYTHONPATH still contains NFC paths those get added to
+    # sys.path before the stdlib, causing C-extension mismatches (_sre MAGIC
+    # mismatch, numba numpy version conflicts, etc.).  Simplest fix: clear
+    # PYTHONPATH entirely — halfpipe needs none of these NFC paths.
     env = os.environ.copy()
-    raw = env.get("PYTHONPATH", "")
-    if raw:
-        clean = ":".join(
-            p for p in raw.split(":")
-            if p
-            and "nfc-env" not in p
-            and "nfc-py311" not in p
-            and "/opt/conda/lib/python" not in p
-        )
-        if clean:
-            env["PYTHONPATH"] = clean
-        else:
-            env.pop("PYTHONPATH", None)
+    env.pop("PYTHONPATH", None)
     return env
 
 

@@ -42,11 +42,16 @@ class ComputationController(Controller):
 
     def __init__(
         self,
-        min_clients: int = 2,
+        min_clients: int = 0,
         wait_time_after_min_received: int = 10,
         task_timeout: int = 0,
     ):
-        """Configure participant thresholds and task timing."""
+        """Configure participant thresholds and task timing.
+
+        When min_clients=0 (the default), the controller waits for all
+        registered clients to respond before proceeding.  Pass an explicit
+        positive integer to allow aggregation with a subset.
+        """
         super().__init__()
         if self.SPEC is None:
             raise ValueError("Controller SPEC must be defined")
@@ -200,6 +205,10 @@ class ComputationController(Controller):
         fl_ctx: FLContext,
         abort_signal: Signal,
     ) -> None:
+        min_responses = self._min_clients
+        if min_responses == 0:
+            min_responses = len(self._engine.get_clients())
+
         task = Task(
             name=task_name,
             data=data,
@@ -209,7 +218,7 @@ class ComputationController(Controller):
         )
         self.broadcast_and_wait(
             task=task,
-            min_responses=self._min_clients,
+            min_responses=min_responses,
             wait_time_after_min_received=self._wait_time_after_min_received,
             fl_ctx=fl_ctx,
             abort_signal=abort_signal,
