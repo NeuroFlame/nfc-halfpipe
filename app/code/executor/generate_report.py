@@ -151,11 +151,20 @@ def generate_html_report(site_name: str, global_results: dict) -> str:
         for sid, label in sidebar_sections
     )
 
+    # Short readable label for this site: truncate hex IDs, keep real names as-is
+    site_display = (
+        "…" + site_name[-8:]
+        if len(site_name) > 12 and all(c in "0123456789abcdef" for c in site_name)
+        else site_name
+    )
     chips_html = (
-        "<div class='chip'>Site <b>" + _esc(site_name) + "</b></div>"
+        "<div class='chip'>Site <b title='" + _esc(site_name) + "'>" + _esc(site_display) + "</b></div>"
         + "<div class='chip'>Subjects <b>" + str(total_subjects) + "</b></div>"
         + "<div class='chip'>Sites <b>" + str(n_sites) + "</b></div>"
         + "".join("<div class='chip'>Mode <b>" + _esc(m) + "</b></div>" for m in active_modes)
+        + "<div class='chip'><a href='halfpipe_reports/index.html' "
+          "style='color:inherit;text-decoration:none' title='HALFpipe preprocessing QC report'>"
+          "HALFpipe QC ↗</a></div>"
     )
 
     fd_val = "{:.3f}".format(mean_fd) if mean_fd is not None else "—"
@@ -199,13 +208,14 @@ def generate_html_report(site_name: str, global_results: dict) -> str:
     ) if voxelwise else ""
 
     site_name_esc = _esc(site_name)
+    site_display_esc = _esc(site_display)
     n_sites_str = str(n_sites)
 
     parts = [
         "<!DOCTYPE html>\n<html lang='en'>\n<head>\n",
         "<meta charset='UTF-8'/>\n",
         "<meta name='viewport' content='width=device-width,initial-scale=1.0'/>\n",
-        "<title>HALFpipe Federated fMRI — " + site_name_esc + "</title>\n",
+        "<title>HALFpipe Federated fMRI — " + site_display_esc + "</title>\n",
         "<style>\n",
         _CSS,
         "\n</style>\n</head>\n<body>\n",
@@ -219,7 +229,7 @@ def generate_html_report(site_name: str, global_results: dict) -> str:
         "<button class='sidebar-peek' id='sidebarPeek' onclick='toggleSidebar()'>Sections</button>",
         "<div class='main-content'>",
         "<div class='page-header'>",
-        "<h1>HALFpipe Federated fMRI Analysis — " + site_name_esc + "</h1>",
+        "<h1>HALFpipe Federated fMRI Analysis</h1>",
         "<p>Federated fMRI preprocessing and feature extraction across "
         + n_sites_str + " participating sites</p>",
         "<div class='chips'>" + chips_html + "</div>",
@@ -259,29 +269,50 @@ def _kpi(label: str, value: str, color: str = "var(--text)") -> str:
     )
 
 
+def _site_label(site_id: str, idx: int) -> str:
+    """Short human-readable label for a site: 'Site 1 (…a20068)' style."""
+    short = site_id[-8:] if len(site_id) > 8 else site_id
+    return "Site {} (…{})".format(idx + 1, short)
+
+
 def _build_qc_table(site_summaries: dict) -> str:
     if not site_summaries:
         return "<p style='color:var(--text3);font-size:.85rem'>No per-site QC data available.</p>"
 
     rows = ""
-    for site in sorted(site_summaries):
+    for idx, site in enumerate(sorted(site_summaries)):
         stats = site_summaries[site]
         n = stats.get("n_subjects", "—")
         fd = stats.get("mean_fd")
         fd_perc = stats.get("mean_fd_perc")
+        tsnr = stats.get("mean_gm_tsnr")
         fd_color = (
             "#dc2626" if fd is not None and fd > 0.5
             else "#16a34a" if fd is not None and fd <= 0.3
             else "#d97706"
         )
-        fd_str = "<span style='font-family:monospace;color:" + fd_color + "'>{:.3f}</span>".format(fd) if fd is not None else "—"
+        tsnr_color = (
+            "#dc2626" if tsnr is not None and tsnr < 50
+            else "#16a34a" if tsnr is not None and tsnr >= 80
+            else "#d97706"
+        )
+        fd_str = (
+            "<span style='font-family:monospace;color:" + fd_color + "'>{:.3f}</span>".format(fd)
+            if fd is not None else "—"
+        )
         fd_perc_str = "{:.1f}%".format(fd_perc) if fd_perc is not None else "—"
+        tsnr_str = (
+            "<span style='font-family:monospace;color:" + tsnr_color + "'>{:.1f}</span>".format(tsnr)
+            if tsnr is not None else "—"
+        )
+        label = _site_label(site, idx)
         rows += (
             "<tr>"
-            "<td>" + _esc(str(site)) + "</td>"
+            "<td title='" + _esc(site) + "'>" + _esc(label) + "</td>"
             "<td>" + str(n) + "</td>"
             "<td>" + fd_str + "</td>"
             "<td style='font-family:monospace'>" + fd_perc_str + "</td>"
+            "<td>" + tsnr_str + "</td>"
             "</tr>"
         )
 
@@ -289,7 +320,8 @@ def _build_qc_table(site_summaries: dict) -> str:
         "<div class='stat-card'><div class='stat-card-scroll'>"
         "<table class='stat-table'>"
         "<thead><tr>"
-        "<th>Site</th><th>N Subjects</th><th>Mean FD (mm)</th><th>FD %</th>"
+        "<th>Site</th><th>N Subjects</th><th>Mean FD (mm)</th>"
+        "<th>FD % &gt;0.5 mm</th><th>Mean GM tSNR</th>"
         "</tr></thead>"
         "<tbody>" + rows + "</tbody>"
         "</table></div></div>"
@@ -598,10 +630,11 @@ function _drawBrainPanel(cid,mat,thr,view){
     brain_calls = []          # JS executed after page load for brain views
 
     for idx, (key, entry) in enumerate(sorted(matrices.items())):
-        n_parcels  = entry.get("n_parcels", 0)
-        n_sites    = entry.get("n_sites", "—")
-        n_subjects = entry.get("total_subjects", "—")
-        matrix     = entry.get("mean_correlation_matrix", [])
+        n_parcels    = entry.get("n_parcels", 0)
+        n_sites      = entry.get("n_sites", "—")
+        n_subjects   = entry.get("total_subjects", "—")
+        matrix       = entry.get("mean_correlation_matrix", [])
+        site_matrices = entry.get("site_matrices", {})
 
         # Mean off-diagonal r
         mean_offdiag = None
@@ -666,6 +699,66 @@ function _drawBrainPanel(cid,mat,thr,view){
             net_legend = (
                 "<div style='display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.65rem'>"
                 + chips + "</div>"
+            )
+
+        # Per-site matrix tabs (shown below the federated aggregate)
+        site_tabs_html = ""
+        if site_matrices:
+            tab_btns = ""
+            tab_panels = ""
+            for s_idx, (site_id, site_entry) in enumerate(sorted(site_matrices.items())):
+                s_mat   = site_entry.get("mean_correlation_matrix", [])
+                s_n     = site_entry.get("n_subjects", "—")
+                s_cid   = f"heatmap_{idx}_site_{s_idx}"
+                s_pid   = f"panel_{idx}_site_{s_idx}"
+                # short display label matching QC table: "Site N (…last8)"
+                s_label = _site_label(site_id, s_idx)
+                active_cls = " active" if s_idx == 0 else ""
+                display_style = "" if s_idx == 0 else " style='display:none'"
+                tab_btns += (
+                    "<button class='tab-btn" + active_cls + "'"
+                    " onclick='switchTab(this,\"" + s_pid + "\")'>"
+                    + _esc(s_label)
+                    + " <span style='opacity:.6;font-size:.7em'>(" + str(s_n) + " subj)</span>"
+                    "</button>"
+                )
+                s_compact = [[round(v, 4) if isinstance(v, float) else v for v in row] for row in s_mat]
+                s_json = json.dumps(s_compact, separators=(",", ":"))
+                # mean off-diagonal for this site
+                s_mean = None
+                if s_mat:
+                    t, c = 0.0, 0
+                    for ri_idx, ri in enumerate(s_mat):
+                        for j2, v in enumerate(ri):
+                            if j2 != ri_idx and isinstance(v, (int, float)):
+                                t += v; c += 1
+                    s_mean = round(t / c, 4) if c else None
+                s_stat = (
+                    "<span style='font-size:.75rem;color:var(--text3);margin-left:.5rem'>"
+                    "mean r = {:.4f}".format(s_mean) + "</span>"
+                ) if s_mean is not None else ""
+                tab_panels += (
+                    "<div id='" + s_pid + "'" + display_style + ">"
+                    "<div style='display:flex;align-items:center;margin:.4rem 0'>"
+                    "<span style='font-size:.78rem;color:var(--text2);font-weight:600'>"
+                    + _esc(s_label) + "</span>" + s_stat
+                    + "</div>"
+                    "<div style='overflow-x:auto'>"
+                    "<canvas id='" + s_cid + "' style='max-width:100%;display:block;"
+                    "border:1px solid var(--border);border-radius:6px'></canvas>"
+                    "</div>"
+                    + corr_legend + "</div>"
+                )
+                heatmap_calls.append(
+                    "drawHeatmap('" + s_cid + "'," + s_json + "," + nets_json + ");"
+                )
+            site_tabs_html = (
+                "<div style='margin-top:1.2rem;border-top:1px solid var(--border);padding-top:.9rem'>"
+                "<div style='font-size:.78rem;font-weight:700;color:var(--text3);"
+                "text-transform:uppercase;letter-spacing:.06em;margin-bottom:.55rem'>Per-site matrices</div>"
+                "<div class='tabs'>" + tab_btns + "</div>"
+                + tab_panels
+                + "</div>"
             )
 
         # ------------------------------------------------------------ #
@@ -765,6 +858,7 @@ function _drawBrainPanel(cid,mat,thr,view){
             + corr_legend
             + net_legend
             + brain_html
+            + site_tabs_html
             + "</div></div>"
         )
         cards.append(card)
