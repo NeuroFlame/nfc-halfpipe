@@ -208,10 +208,16 @@ def aggregate_connectivity(site_results: Dict[str, dict]) -> dict:
         {
             "matrices": {
                 "{feature}_atlas-{atlas}": {
-                    "mean_correlation_matrix": list[list[float]],
+                    "mean_correlation_matrix": list[list[float]],  # federated mean
                     "n_parcels": int,
                     "n_sites": int,
                     "total_subjects": int,
+                    "site_matrices": {
+                        "{site_id}": {
+                            "mean_correlation_matrix": list[list[float]],
+                            "n_subjects": int,
+                        }
+                    },
                 }
             },
             "n_sites": int,
@@ -237,8 +243,9 @@ def aggregate_connectivity(site_results: Dict[str, dict]) -> dict:
         z_weighted_sum: Optional[Any] = None
         total_n = 0
         n_parcels = None
+        site_matrices: dict = {}
 
-        for site_result in site_results.values():
+        for site_id, site_result in site_results.items():
             entry = site_result.get("connectivity", {}).get(key)
             if entry is None:
                 continue
@@ -258,6 +265,13 @@ def aggregate_connectivity(site_results: Dict[str, dict]) -> dict:
                 )
                 continue
 
+            site_r = np.tanh(z_arr)
+            np.fill_diagonal(site_r, 1.0)
+            site_matrices[site_id] = {
+                "mean_correlation_matrix": site_r.tolist(),
+                "n_subjects": n,
+            }
+
             z_weighted_sum = (z_arr * n) if z_weighted_sum is None else z_weighted_sum + z_arr * n
             total_n += n
 
@@ -275,6 +289,7 @@ def aggregate_connectivity(site_results: Dict[str, dict]) -> dict:
             "n_parcels": n_parcels,
             "n_sites": n_sites,
             "total_subjects": total_n,
+            "site_matrices": site_matrices,
         }
         grand_total_subjects = max(grand_total_subjects, total_n)
 
