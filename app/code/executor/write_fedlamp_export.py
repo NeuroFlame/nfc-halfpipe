@@ -64,7 +64,10 @@ def write_fedlamp_connectivity_csv(
     covariate_filename = cfg.get("covariate_file", "FedLAMP_Covariate.csv")
 
     if derivatives_path is None:
-        return _write_mock_fedlamp_csvs(site_data, params, output_dir, data_filename, covariate_filename)
+        return _write_mock_fedlamp_csvs(
+            site_data, params, output_dir, data_filename, covariate_filename,
+            bids_directory=bids_directory,
+        )
 
     try:
         import numpy as np
@@ -195,6 +198,7 @@ def _write_mock_fedlamp_csvs(
     output_dir: str,
     data_filename: str,
     covariate_filename: str,
+    bids_directory: Optional[str] = None,
 ) -> dict:
     """
     Write mock Fed-LAMP CSVs using synthetic per-subject connectivity data.
@@ -228,8 +232,11 @@ def _write_mock_fedlamp_csvs(
             for j in range(i + 1, n + 1):
                 columns.append(f"{key}_{i:03d}x{j:03d}")
 
-    width = len(str(n_subjects))
-    subject_ids = [f"sub-{i:0{width}d}" for i in range(1, n_subjects + 1)]
+    # Subject IDs: read from participants.tsv if available, otherwise synthesise
+    # with zero-padding to match BIDS convention (sub-01, sub-02, ...).
+    subject_ids = _subject_ids_from_bids(bids_directory, n_subjects)
+    # Bare IDs (strip "sub-" prefix) for _build_covariate_rows
+    bare_ids = [s[4:] if s.startswith("sub-") else s for s in subject_ids]
 
     rng = np.random.default_rng(42)
     os.makedirs(output_dir, exist_ok=True)
@@ -255,12 +262,17 @@ def _write_mock_fedlamp_csvs(
                         col_idx += 1
             writer.writerow(row)
 
+    covariate_rows, covariate_columns = _build_covariate_rows(
+        subject_order=bare_ids,
+        bids_directory=bids_directory,
+        derivatives_path=None,
+    )
     covariate_path = os.path.join(output_dir, covariate_filename)
     with open(covariate_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["subject_id"])
+        writer = csv.DictWriter(f, fieldnames=covariate_columns, extrasaction="ignore", restval="")
         writer.writeheader()
-        for sid in subject_ids:
-            writer.writerow({"subject_id": sid})
+        for row in covariate_rows:
+            writer.writerow(row)
 
     logging.info(
         f"Mock FedLAMP Data.csv written: {n_subjects} subjects "
@@ -272,3 +284,28 @@ def _write_mock_fedlamp_csvs(
         "n_subjects": n_subjects,
         "n_columns": len(columns),
     }
+
+
+def _subject_ids_from_bids(bids_directory: Optional[str], n_subjects: int) -> list:
+    """
+    Return a list of BIDS-format subject IDs ('sub-01', 'sub-02', ...).
+
+    Reads participant_id from participants.tsv when available so mock rows
+    align with real subjects. Falls back to zero-padded sequential IDs.
+    """
+    if bids_directory:
+        ptsp = os.path.join(bids_directory, "participants.tsv")
+        if os.path.exists(ptsp):
+            try:
+                ids = []
+                with open(ptsp, newline="") as f:
+                    for record in csv.DictReader(f, delimiter="\t"):
+                        pid = record.get("participant_id", "")
+                        if pid:
+                            ids.append(pid if pid.startswith("sub-") else f"sub-{pid}")
+                if ids:
+                    return ids
+            except Exception:
+                pass
+    width = max(2, len(str(n_subjects)))
+    return [f"sub-{i:0{width}d}" for i in range(1, n_subjects + 1)]
