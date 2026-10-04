@@ -72,7 +72,7 @@ def write_fedlamp_connectivity_csv(
         raise RuntimeError("numpy is required for Fed-LAMP connectivity export.")
 
     root = Path(derivatives_path)
-    tsv_files = sorted(root.rglob("*_correlation_matrix.tsv"))
+    tsv_files = sorted(root.rglob("*_desc-correlation_matrix.tsv"))
 
     if not tsv_files:
         logging.warning(
@@ -88,7 +88,7 @@ def write_fedlamp_connectivity_csv(
     for tsv_path in tsv_files:
         m_sub = re.search(r"/sub-([^/]+)/", str(tsv_path))
         m_key = re.search(
-            r"_feature-([^_]+)_atlas-([^_]+)_correlation_matrix\.tsv$",
+            r"_feature-([^_]+)_atlas-([^_]+)_desc-correlation_matrix\.tsv$",
             tsv_path.name,
         )
         if not m_sub or not m_key:

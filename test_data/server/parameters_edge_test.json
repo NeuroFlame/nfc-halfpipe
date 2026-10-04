@@ -3,7 +3,7 @@
   "run_halfpipe": true,
   "fs_license_path": "/workspace/data/license.txt",
   "n_procs": 2,
-  "aggregation_types": ["qc_metadata", "roi_values", "atlas_connectivity"],
+  "aggregation_types": ["qc_metadata", "roi_values", "atlas_connectivity", "fedlamp_export"],
   "halfpipe_spec": {
     "files": [
       {
