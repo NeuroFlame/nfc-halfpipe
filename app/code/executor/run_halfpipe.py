@@ -103,6 +103,7 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
     # which fills in all required defaults (slice_timing, run_fmriprep, etc.).
     spec.setdefault("global_settings", {})
 
+    workdir = _ensure_writable_workdir(workdir, output_dir)
     os.makedirs(workdir, exist_ok=True)
     spec_path = os.path.join(workdir, "spec.json")
     with open(spec_path, "w") as f:
@@ -158,6 +159,48 @@ def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_di
         "qc_summary": qc_summary,
         "derivatives_path": derivatives_path if os.path.isdir(derivatives_path) else None,
     }
+
+
+def _ensure_writable_workdir(preferred: str, output_dir: str) -> str:
+    """Return a writable workdir, falling back to output_dir when preferred is read-only.
+
+    The NeuroFLAME edge daemon mounts the user's data directory read-only.
+    When halfpipe_workdir is configured inside that mount (e.g.
+    /workspace/data/halfpipe_workdir), writes fail on Linux.  This function:
+      1. Tests writeability by attempting to create the directory.
+      2. If it fails, uses a fallback path inside /workspace/output (always writable).
+      3. Symlinks any existing fMRIPrep derivatives from the preferred path into
+         the fallback so HALFpipe skips re-running fMRIPrep.
+    """
+    try:
+        os.makedirs(preferred, exist_ok=True)
+        probe = os.path.join(preferred, ".nfc_write_probe")
+        with open(probe, "w") as fh:
+            fh.write("ok")
+        os.remove(probe)
+        return preferred
+    except (OSError, PermissionError):
+        pass
+
+    fallback = os.path.join(output_dir, "halfpipe_workdir")
+    logging.warning(
+        f"halfpipe_workdir {preferred!r} is not writable (read-only data mount?); "
+        f"falling back to {fallback!r}"
+    )
+    os.makedirs(fallback, exist_ok=True)
+
+    # Symlink existing fMRIPrep derivatives so HALFpipe skips preprocessing.
+    for subdir in ("fmriprep", "fmripost_aroma"):
+        src = os.path.join(preferred, "derivatives", subdir)
+        if os.path.isdir(src):
+            dst_parent = os.path.join(fallback, "derivatives")
+            os.makedirs(dst_parent, exist_ok=True)
+            dst = os.path.join(dst_parent, subdir)
+            if not os.path.exists(dst):
+                os.symlink(src, dst)
+                logging.info(f"Symlinked {subdir} derivatives: {src} → {dst}")
+
+    return fallback
 
 
 def _extract_qc_from_derivatives(derivatives_path: str) -> dict:
