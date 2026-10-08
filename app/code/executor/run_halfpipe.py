@@ -24,7 +24,7 @@ def _halfpipe_env() -> dict:
     return env
 
 
-def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_directory: str) -> dict:
+def run_halfpipe_and_get_qc(site_data: dict, params: dict, workdir: str, bids_directory: str, output_dir: str = "") -> dict:
     """
     Run HALFpipe subject-level analysis and return QC summary.
 

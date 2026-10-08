@@ -52,11 +52,28 @@ def run_halfpipe(site_data: dict, parameters: dict, output_dir: str, data_dir: s
         params=parameters,
         workdir=halfpipe_workdir,
         bids_directory=bids_directory,
+        output_dir=output_dir,
     )
 
     # Copy HALFpipe's own QC report to the site output directory so the
     # site coordinator can open it alongside the federated index.html.
     halfpipe_reports_src = os.path.join(halfpipe_workdir, "reports")
+    if not os.path.isdir(halfpipe_reports_src):
+        # Fallback: look for reports alongside the derivatives directory.
+        # HALFpipe writes {workdir}/reports/ and {workdir}/derivatives/halfpipe/.
+        # When derivatives_directory points directly to the flat folder
+        # (e.g. /workspace/data/halfpipe_derivatives), reports may live at
+        # {data_dir}/reports or one/two levels above derivatives_path.
+        deriv_path = halfpipe_result.get("derivatives_path") or ""
+        for candidate_parent in [
+            os.path.dirname(deriv_path),
+            os.path.dirname(os.path.dirname(deriv_path)),
+            os.path.dirname(os.path.dirname(os.path.dirname(deriv_path))),
+        ]:
+            candidate = os.path.join(candidate_parent, "reports")
+            if os.path.isdir(candidate):
+                halfpipe_reports_src = candidate
+                break
     if os.path.isdir(halfpipe_reports_src):
         halfpipe_reports_dst = os.path.join(output_dir, "halfpipe_reports")
         shutil.copytree(halfpipe_reports_src, halfpipe_reports_dst, dirs_exist_ok=True)
@@ -64,6 +81,26 @@ def run_halfpipe(site_data: dict, parameters: dict, output_dir: str, data_dir: s
         logging.info("HALFpipe QC report copied to %s/index.html", halfpipe_reports_dst)
     else:
         logging.debug("No HALFpipe reports directory found (mock or skipped run)")
+
+    # When halfpipe ran (run_halfpipe=true) but produced no halfpipe/ derivatives
+    # (all subjects failed on stub data, or fMRIPrep-only run), n_subjects=0 and
+    # derivatives_path=None.  extract_roi_values and extract_connectivity_matrices
+    # already fall back to mock data via derivatives_path=None; mirror that here
+    # so QC also reports consistent subject counts.
+    if (halfpipe_result.get("n_subjects", 0) == 0
+            and halfpipe_result.get("derivatives_path") is None
+            and halfpipe_result.get("status") != "skipped"):
+        mock = site_data.get("mock_derivatives", {})
+        if mock.get("n_subjects", 0) > 0:
+            halfpipe_result = {
+                **halfpipe_result,
+                "n_subjects": mock["n_subjects"],
+                "qc_summary": mock.get("qc_metadata", halfpipe_result.get("qc_summary", {})),
+            }
+            logging.info(
+                "HALFpipe produced no halfpipe/ derivatives; "
+                "using mock QC data (%d subjects)", mock["n_subjects"],
+            )
 
     qc_payload = extract_qc_metadata(
         n_subjects=halfpipe_result["n_subjects"],

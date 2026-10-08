@@ -25,6 +25,27 @@ _DEPLOYMENT_TIMEOUT_SUFFIX = ": no reply (deployment timeout)"
 _SAFE_PARTICIPANT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}")
 
 
+def _redirect_host_docker_internal_to_localhost():
+    """Redirect host.docker.internal to 127.0.0.1 inside the central container.
+
+    The NVFlare server and its admin API client both run in this container.
+    The provisioned admin config uses host.docker.internal:<port> as the server
+    address, which was intended for edge containers that need to reach the server
+    via the Docker host's port mapping. From inside the central container that
+    same routing (container → host → port-mapping → container) can fail on
+    macOS Docker Desktop. Pointing host.docker.internal at localhost means the
+    admin client connects directly to the NVFlare server in the same container,
+    while the TLS SNI still presents "host.docker.internal" so the provisioned
+    certificate validates correctly.
+    """
+    try:
+        with open("/etc/hosts", "a") as fh:
+            fh.write("\n127.0.0.1 host.docker.internal\n")
+    except OSError as exc:
+        import logging
+        logging.warning(f"Could not patch /etc/hosts for local NVFlare admin connection: {exc}")
+
+
 def start_server():
     """Start the provisioned NVFlare server process."""
     subprocess.run(
@@ -81,6 +102,7 @@ def main():
     failure_stage = "controller_startup"
     public_stage = "startup"
     try:
+        _redirect_host_docker_internal_to_localhost()
         start_server()
         session = new_secure_session(
             ADMIN_USER_EMAIL,
@@ -115,14 +137,12 @@ def main():
                 session.shutdown(TargetType.ALL)
             except Exception as shutdown_error:
                 if active_error is None:
-                    _report_runtime_failure(
-                        output_dir,
-                        shutdown_error,
-                        stage="controller_execution",
-                        public_stage="execution",
-                    )
-                    raise
-                active_error.add_note(f"NVFlare shutdown also failed: {shutdown_error}")
+                    # Computation succeeded; log the shutdown issue but don't
+                    # fail the run — outputs are already written.
+                    import logging
+                    logging.warning(f"NVFlare shutdown warning (run succeeded): {shutdown_error}")
+                else:
+                    active_error.add_note(f"NVFlare shutdown also failed: {shutdown_error}")
 
 
 if __name__ == "__main__":

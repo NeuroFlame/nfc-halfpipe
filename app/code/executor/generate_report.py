@@ -81,10 +81,17 @@ function toggleSidebar(){
   p.classList.toggle('visible',hidden);
 }
 function switchTab(btn,panelId){
-  document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
-  document.querySelectorAll('.tab-panel').forEach(function(p){p.style.display='none';});
+  var container=btn.closest('.tabs').parentElement;
+  container.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
+  container.querySelectorAll('.tab-panel').forEach(function(p){p.style.display='none';});
   btn.classList.add('active');
-  document.getElementById(panelId).style.display='';
+  var panel=document.getElementById(panelId);
+  panel.style.display='';
+  if(window._hm){
+    panel.querySelectorAll('canvas[id]').forEach(function(cv){
+      var d=window._hm[cv.id];if(d)drawHeatmap(cv.id,d[0],d[1]);
+    });
+  }
 }
 var navItems=document.querySelectorAll('.nav-item[data-sec]');
 var observer=new IntersectionObserver(function(entries){
@@ -270,7 +277,10 @@ def _kpi(label: str, value: str, color: str = "var(--text)") -> str:
 
 
 def _site_label(site_id: str, idx: int) -> str:
-    """Short human-readable label for a site: 'Site 1 (…a20068)' style."""
+    """Short human-readable label for a site: 'Site 1 (user2)' or 'Site 1 (…a20068)' style."""
+    if "@" in site_id:
+        short = site_id.split("@")[0]
+        return "Site {} ({})".format(idx + 1, short)
     short = site_id[-8:] if len(site_id) > 8 else site_id
     return "Site {} (…{})".format(idx + 1, short)
 
@@ -738,7 +748,7 @@ function _drawBrainPanel(cid,mat,thr,view){
                     "mean r = {:.4f}".format(s_mean) + "</span>"
                 ) if s_mean is not None else ""
                 tab_panels += (
-                    "<div id='" + s_pid + "'" + display_style + ">"
+                    "<div class='tab-panel' id='" + s_pid + "'" + display_style + ">"
                     "<div style='display:flex;align-items:center;margin:.4rem 0'>"
                     "<span style='font-size:.78rem;color:var(--text2);font-weight:600'>"
                     + _esc(s_label) + "</span>" + s_stat
@@ -750,7 +760,9 @@ function _drawBrainPanel(cid,mat,thr,view){
                     + corr_legend + "</div>"
                 )
                 heatmap_calls.append(
-                    "drawHeatmap('" + s_cid + "'," + s_json + "," + nets_json + ");"
+                    "window._hm=window._hm||{};"
+                    "window._hm['" + s_cid + "']=[" + s_json + "," + nets_json + "];"
+                    + ("drawHeatmap('" + s_cid + "'," + s_json + "," + nets_json + ");" if s_idx == 0 else "")
                 )
             site_tabs_html = (
                 "<div style='margin-top:1.2rem;border-top:1px solid var(--border);padding-top:.9rem'>"
@@ -858,7 +870,7 @@ function _drawBrainPanel(cid,mat,thr,view){
             + corr_legend
             + net_legend
             + brain_html
-            + site_tabs_html
+            + ("" if brain_html else site_tabs_html)
             + "</div></div>"
         )
         cards.append(card)
