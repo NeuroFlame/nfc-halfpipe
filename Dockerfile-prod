@@ -81,7 +81,7 @@ COPY ./system/entry_provision.py /workspace/system/entry_provision.py
 # ──────────────────────────────────────────────────────────────────────────────
 LABEL org.opencontainers.image.title=nfc-halfpipe
 LABEL org.opencontainers.image.version=0.1.0
-LABEL org.opencontainers.image.revision=0bab2ca1d4f2fd8397d1fddb9e0da4f853b688a5
+LABEL org.opencontainers.image.revision=dd8963752ea24beea24816ea4bec22cd08735a1a
 LABEL org.opencontainers.image.source=https://github.com/NeuroFlame/nfc-halfpipe
 LABEL org.neuroflame.computation-api.version=0.1.0
 LABEL org.neuroflame.boilerplate.version=0.1.0
