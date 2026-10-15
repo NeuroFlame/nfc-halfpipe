@@ -152,6 +152,11 @@ def write_fedlamp_connectivity_csv(
         fname = f"data_{atlas_name.group(1)}.csv" if atlas_name else f"data_{key}.csv"
         path = os.path.join(output_dir, fname)
 
+        subjects_with_data = [s for s in subject_order if subject_atlas_matrices[s].get(key)]
+        if not subjects_with_data:
+            logging.info("Skipping %s — no subjects at this site have %s data", fname, key)
+            continue
+
         with open(path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore", restval="")
             writer.writeheader()
