@@ -3,20 +3,20 @@ Export per-subject connectivity features for downstream Fed-LAMP analysis.
 
 Writes two CSV files locally at each site (nothing is federated):
 
-  FedLAMP_connectivity_Data.csv
+  data.csv
       One row per subject. Columns are the upper triangle of each subject's
       correlation matrix, one column per ordered parcel pair (i < j, 1-indexed).
       Column format: {feature_key}_{i:03d}x{j:03d}
-      Row-aligned with FedLAMP_Covariate.csv.
+      Row-aligned with labels.csv.
 
-  FedLAMP_Covariate.csv
+  labels.csv
       One row per subject. Contains subject_id, all columns from the BIDS
       participants.tsv, and HALFpipe per-subject QC metrics (mean_fd,
       mean_fd_perc, mean_gm_tsnr). Same schema as nfc-combatdc's Covariate.csv.
 
 Set nfc-fedlamp's parameters.json:
-    "data_file":      "FedLAMP_connectivity_Data.csv"
-    "covariate_file": "FedLAMP_Covariate.csv"
+    "data_file":      "data.csv"
+    "covariate_file": "labels.csv"
 
 When multiple atlases are present all their upper-triangle columns are
 concatenated in the same row (atlas order is deterministic: sorted by key).
@@ -60,8 +60,8 @@ def write_fedlamp_connectivity_csv(
     dict with keys: data_path, covariate_path, n_subjects, n_columns
     """
     cfg = params.get("fedlamp_config", {})
-    data_filename = cfg.get("connectivity_data_file", "FedLAMP_connectivity_Data.csv")
-    covariate_filename = cfg.get("covariate_file", "FedLAMP_Covariate.csv")
+    data_filename = cfg.get("connectivity_data_file", "data.csv")
+    covariate_filename = cfg.get("covariate_file", "labels.csv")
 
     if derivatives_path is None:
         return _write_mock_fedlamp_csvs(
