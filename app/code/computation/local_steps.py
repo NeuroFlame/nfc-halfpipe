@@ -117,10 +117,12 @@ def run_halfpipe(site_data: dict, parameters: dict, output_dir: str, data_dir: s
 def send_roi_values(_incoming, parameters: dict, state: dict, output_dir: str, data_dir: str):
     """Extract atlas-parcellated feature values if roi_values / subject_csv is enabled.
 
-    Returns None when neither aggregation type is requested, which the server
-    treats as a no-op for this site in the ROI aggregation step.
+    Returns None when run_federation is false (default) or neither aggregation type
+    is requested, which the server treats as a no-op for this site.
     """
     if parameters.get("halfpipe_only"):
+        return None
+    if not parameters.get("run_federation", False):
         return None
     aggregation_types = _as_list(parameters.get("aggregation_types", []))
     if "roi_values" not in aggregation_types and "subject_csv" not in aggregation_types:
@@ -160,12 +162,13 @@ def send_atlas_connectivity(_incoming, parameters: dict, state: dict, output_dir
     is in aggregation_types. The two modes are independent — either or both can
     be requested.
 
-    Returns None when neither atlas_connectivity nor fedlamp_export is requested.
+    Returns None when run_federation is false (default), or neither atlas_connectivity
+    nor fedlamp_export is requested.
     """
     if parameters.get("halfpipe_only"):
         return None
     aggregation_types = _as_list(parameters.get("aggregation_types", []))
-    want_federation = "atlas_connectivity" in aggregation_types
+    want_federation = parameters.get("run_federation", False) and "atlas_connectivity" in aggregation_types
     want_fedlamp = "fedlamp_export" in aggregation_types
 
     if not want_federation and not want_fedlamp:
@@ -204,9 +207,11 @@ def send_atlas_connectivity(_incoming, parameters: dict, state: dict, output_dir
 def send_site_stats(_incoming, parameters: dict, state: dict, output_dir: str, data_dir: str):
     """Run within-site group-level analysis and return stat maps if enabled.
 
-    Returns None when voxelwise_maps is not requested.
+    Returns None when run_regression is false (default) or voxelwise_maps is not requested.
     """
     if parameters.get("halfpipe_only"):
+        return None
+    if not parameters.get("run_federation", False):
         return None
     aggregation_types = _as_list(parameters.get("aggregation_types", []))
     if "voxelwise_maps" not in aggregation_types:

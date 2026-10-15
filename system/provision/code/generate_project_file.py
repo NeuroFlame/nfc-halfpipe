@@ -26,11 +26,7 @@ def generate_project_file(
                 "name": host_identifier,
                 "org": "nvidia",
                 "type": "server",
-                # The NeuroFLAME CFC maps the central container on the reserved
-                # host port (e.g. 3010) but writes fed_learn_port=reserved+1 to
-                # provision_input.json.  Subtract 1 so NVFlare binds on the port
-                # that is actually reachable from edge clients.
-                "fed_learn_port": fed_learn_port - 1,
+                "fed_learn_port": fed_learn_port,
             },
             {
                 "name": "admin@admin.com",

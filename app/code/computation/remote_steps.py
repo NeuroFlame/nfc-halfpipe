@@ -32,9 +32,9 @@ def aggregate_qc_step(site_results: dict, state: dict | None = None):
 
 
 def aggregate_roi_step(site_results: dict, parameters: dict, state: dict | None = None):
-    """Aggregate ROI values if roi_values is enabled; pass-through otherwise."""
+    """Aggregate ROI values if run_federation is enabled; pass-through otherwise."""
     accumulated = dict(state or {})
-    if "roi_values" in _aggregation_types(parameters):
+    if parameters.get("run_federation", False) and "roi_values" in _aggregation_types(parameters):
         valid = {site: data for site, data in site_results.items() if data}
         if valid:
             accumulated["roi_values"] = aggregate_roi_values(valid)
@@ -42,9 +42,9 @@ def aggregate_roi_step(site_results: dict, parameters: dict, state: dict | None 
 
 
 def aggregate_connectivity_step(site_results: dict, parameters: dict, state: dict | None = None):
-    """Aggregate connectivity matrices if atlas_connectivity is enabled; pass-through otherwise."""
+    """Aggregate connectivity matrices if run_federation is enabled; pass-through otherwise."""
     accumulated = dict(state or {})
-    if "atlas_connectivity" in _aggregation_types(parameters):
+    if parameters.get("run_federation", False) and "atlas_connectivity" in _aggregation_types(parameters):
         valid = {site: data for site, data in site_results.items() if data}
         if valid:
             accumulated["connectivity"] = _agg_connectivity(valid)
@@ -54,7 +54,7 @@ def aggregate_connectivity_step(site_results: dict, parameters: dict, state: dic
 def aggregate_voxelwise_step(site_results: dict, parameters: dict, state: dict | None = None):
     """Aggregate voxelwise maps if enabled; return full accumulated global results."""
     accumulated = dict(state or {})
-    if "voxelwise_maps" in _aggregation_types(parameters):
+    if parameters.get("run_federation", False) and "voxelwise_maps" in _aggregation_types(parameters):
         valid = {site: data for site, data in site_results.items() if data}
         if valid:
             accumulated["voxelwise_maps"] = _agg_voxelwise(valid)

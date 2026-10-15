@@ -1,6 +1,7 @@
 {
   "_note": "Mock test run: run_halfpipe=false uses mock_derivatives from each site's data.json. Set run_halfpipe=true to invoke HALFpipe on real data; the site's data directory (set in the NeuroFLAME UI) is used as the BIDS root.",
   "run_halfpipe": false,
+  "run_federation": false,
   "aggregation_types": ["qc_metadata", "roi_values", "atlas_connectivity"],
   "halfpipe_spec": {
     "version": "1.0.0",
