@@ -72,12 +72,14 @@ os.remove(tmp)"
 #    Saved as /atlases/BNA_246.nii.gz.
 # ──────────────────────────────────────────────────────────────────────────────
 RUN /opt/conda/envs/fmriprep/bin/python3 -c "\
-from nilearn.datasets import fetch_atlas_brainnetome; \
-import shutil; \
+import urllib.request, shutil, os; \
+url = 'http://atlas.brainnetome.org/files/BNA_MPM_thr25_1.25mm.nii.gz'; \
+tmp = '/tmp/BNA_246.nii.gz'; \
 print('Downloading Brainnetome Atlas 246 ...'); \
-result = fetch_atlas_brainnetome(); \
-shutil.copy(str(result.maps), '/atlases/BNA_246.nii.gz'); \
-print(f'Saved /atlases/BNA_246.nii.gz  ({len(result.labels)} labels)')"
+urllib.request.urlretrieve(url, tmp); \
+shutil.copy(tmp, '/atlases/BNA_246.nii.gz'); \
+os.remove(tmp); \
+print('Saved /atlases/BNA_246.nii.gz')"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. Application code
