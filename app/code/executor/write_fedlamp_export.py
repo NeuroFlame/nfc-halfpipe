@@ -120,8 +120,22 @@ def write_fedlamp_connectivity_csv(
         logging.warning("No valid correlation matrices found — Fed-LAMP export skipped")
         return {"data_path": None, "covariate_path": None, "n_subjects": 0, "n_columns": 0}
 
-    # Stable ordering so Data.csv and Covariate.csv rows always align
-    subject_order = sorted(subject_atlas_matrices.keys())
+    # Stable ordering so Data.csv and Covariate.csv rows always align.
+    # Restrict to subjects that appear in participants.tsv when it exists — subjects
+    # that have derivatives but no demographic record (e.g. partial/failed runs from
+    # a different pipeline pass) should not produce empty rows in the output.
+    all_subjects = sorted(subject_atlas_matrices.keys())
+    valid_participants = _participants_tsv_ids(bids_directory)
+    if valid_participants:
+        subject_order = [s for s in all_subjects if s in valid_participants]
+        excluded = set(all_subjects) - set(subject_order)
+        if excluded:
+            logging.info(
+                "FedLAMP export: excluded %d subject(s) not in participants.tsv: %s",
+                len(excluded), sorted(excluded),
+            )
+    else:
+        subject_order = all_subjects
     atlas_keys = sorted({k for mats in subject_atlas_matrices.values() for k in mats})
 
     # Determine n_parcels per atlas (from first valid matrix)
@@ -284,6 +298,30 @@ def _write_mock_fedlamp_csvs(
         "n_subjects": n_subjects,
         "n_columns": len(columns),
     }
+
+
+def _participants_tsv_ids(bids_directory: Optional[str]) -> set:
+    """Return the set of bare subject IDs (without 'sub-' prefix) from participants.tsv.
+
+    Returns an empty set when the file is absent or unreadable, which the caller
+    interprets as "no filter" (include all subjects with derivatives).
+    """
+    if not bids_directory:
+        return set()
+    ptsp = os.path.join(bids_directory, "participants.tsv")
+    if not os.path.exists(ptsp):
+        return set()
+    try:
+        ids: set = set()
+        with open(ptsp, newline="") as f:
+            for record in csv.DictReader(f, delimiter="\t"):
+                pid = record.get("participant_id", "").strip()
+                if pid:
+                    ids.add(pid[4:] if pid.startswith("sub-") else pid)
+        return ids
+    except Exception as exc:
+        logging.warning("Could not read participants.tsv for subject filter: %s", exc)
+        return set()
 
 
 def _subject_ids_from_bids(bids_directory: Optional[str], n_subjects: int) -> list:
