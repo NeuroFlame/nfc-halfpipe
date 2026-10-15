@@ -31,6 +31,13 @@
         "suffix": "atlas",
         "tags": { "desc": "NeuroMark1" },
         "path": "/atlases/NeuroMark_1.0_parcellation.nii.gz"
+      },
+      {
+        "_note": "Brainnetome Atlas 246 (BNA, Fan et al. 2016). 210 cortical + 36 subcortical parcels. Baked into the image at build time.",
+        "datatype": "ref",
+        "suffix": "atlas",
+        "tags": { "desc": "Brainnetome246" },
+        "path": "/atlases/BNA_246.nii.gz"
       }
     ],
     "settings": [
@@ -75,6 +82,14 @@
         "setting": "default",
         "atlases": ["NeuroMark1"],
         "min_region_coverage": 0.5
+      },
+      {
+        "_note": "Brainnetome connectivity: 246x246 FC matrix across BNA cortical and subcortical parcels.",
+        "name": "brainnetome",
+        "type": "atlas_based_connectivity",
+        "setting": "default",
+        "atlases": ["Brainnetome246"],
+        "min_region_coverage": 0.8
       }
     ],
     "models": []

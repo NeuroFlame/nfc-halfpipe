@@ -65,7 +65,22 @@ print('Saved /atlases/NeuroMark_1.0_parcellation.nii.gz'); \
 os.remove(tmp)"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 4. Application code
+# 4. Download Brainnetome Atlas 246 (BNA, Fan et al. 2016 Cereb Cortex).
+#
+#    Source: atlas.brainnetome.org via nilearn (already in the fmriprep env).
+#    246 parcels: 210 cortical (105/hemi) + 36 subcortical (18/hemi).
+#    Saved as /atlases/BNA_246.nii.gz.
+# ──────────────────────────────────────────────────────────────────────────────
+RUN /opt/conda/envs/fmriprep/bin/python3 -c "\
+from nilearn.datasets import fetch_atlas_brainnetome; \
+import shutil; \
+print('Downloading Brainnetome Atlas 246 ...'); \
+result = fetch_atlas_brainnetome(); \
+shutil.copy(str(result.maps), '/atlases/BNA_246.nii.gz'); \
+print(f'Saved /atlases/BNA_246.nii.gz  ({len(result.labels)} labels)')"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 5. Application code
 # ──────────────────────────────────────────────────────────────────────────────
 COPY ./app/ /workspace/app/
 COPY ./system/entry_central.py /workspace/system/entry_central.py

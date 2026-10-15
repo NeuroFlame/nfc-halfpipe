@@ -107,12 +107,32 @@ for _domain, _count in _NEUROMARK1_DOMAINS:
         _ic += 1
 
 # ---------------------------------------------------------------------------
+# Brainnetome Atlas 246 (BNA, Fan et al. 2016 Cereb Cortex)
+# 246 parcels: 210 cortical (105/hemi) + 36 subcortical (18/hemi)
+# Integer labels 1-246 assigned in the MPM NIfTI baked into the Docker image.
+#
+# NOTE: The exact integer→region mapping depends on the NIfTI file's label
+# order.  Until verified against the downloaded atlas, numeric labels BNA-1 …
+# BNA-246 are used so column names are always well-defined.  To add
+# anatomical names, build the image, run:
+#
+#   from nilearn.datasets import fetch_atlas_brainnetome
+#   r = fetch_atlas_brainnetome()
+#   print(r.labels)   # list of 246 strings in NIfTI parcel order
+#
+# then replace this dict with the verified mapping.
+# ---------------------------------------------------------------------------
+
+BRAINNETOME246_LABELS: dict[int, str] = {i: f"BNA-{i}" for i in range(1, 247)}
+
+# ---------------------------------------------------------------------------
 # Lookup helper
 # ---------------------------------------------------------------------------
 
 _ATLAS_LABEL_TABLES: dict[str, dict[int, str]] = {
-    "connectivity_atlas-Schaefer200": SCHAEFER200_LABELS,
-    "neuromark_atlas-NeuroMark1":     NEUROMARK1_LABELS,
+    "connectivity_atlas-Schaefer200":      SCHAEFER200_LABELS,
+    "neuromark_atlas-NeuroMark1":          NEUROMARK1_LABELS,
+    "brainnetome_atlas-Brainnetome246":    BRAINNETOME246_LABELS,
 }
 
 
