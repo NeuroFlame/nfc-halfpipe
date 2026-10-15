@@ -82,6 +82,23 @@ def run_halfpipe(site_data: dict, parameters: dict, output_dir: str, data_dir: s
     else:
         logging.debug("No HALFpipe reports directory found (mock or skipped run)")
 
+    # Persist derivatives to output_dir/halfpipe_derivatives when they live
+    # outside the output directory (e.g. pre-computed from the data mount).
+    derivatives_path = halfpipe_result.get("derivatives_path")
+    if derivatives_path and os.path.isdir(derivatives_path):
+        out_deriv = os.path.join(output_dir, "halfpipe_derivatives")
+        if not _is_subpath(output_dir, derivatives_path) and not os.path.isdir(out_deriv):
+            shutil.copytree(derivatives_path, out_deriv, dirs_exist_ok=True)
+            logging.info("HALFpipe derivatives persisted to %s", out_deriv)
+
+    # Persist halfpipe_workdir to output_dir/halfpipe_workdir when it lives
+    # outside the output directory (e.g. site_data.halfpipe_workdir is a custom path).
+    if os.path.isdir(halfpipe_workdir) and not _is_subpath(output_dir, halfpipe_workdir):
+        out_workdir = os.path.join(output_dir, "halfpipe_workdir")
+        if not os.path.isdir(out_workdir):
+            shutil.copytree(halfpipe_workdir, out_workdir, dirs_exist_ok=True)
+            logging.info("HALFpipe workdir persisted to %s", out_workdir)
+
     # When halfpipe ran (run_halfpipe=true) but produced no halfpipe/ derivatives
     # (all subjects failed on stub data, or fMRIPrep-only run), n_subjects=0 and
     # derivatives_path=None.  extract_roi_values and extract_connectivity_matrices
@@ -254,6 +271,13 @@ def build_outputs(global_results: dict, output_dir: str):
 def _as_list(value) -> list:
     """Normalize a string-or-list parameter value to a plain list."""
     return [value] if isinstance(value, str) else list(value or [])
+
+
+def _is_subpath(parent: str, child: str) -> bool:
+    """Return True when child is the same as or nested inside parent."""
+    parent_real = os.path.realpath(parent) + os.sep
+    child_real = os.path.realpath(child)
+    return child_real == parent_real.rstrip(os.sep) or child_real.startswith(parent_real)
 
 
 def _read_site_data(data_dir: str) -> dict:
