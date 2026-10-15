@@ -6,7 +6,7 @@ Writes two CSV files locally at each site (nothing is federated):
   data.csv
       One row per subject. Columns are the upper triangle of each subject's
       correlation matrix, one column per ordered parcel pair (i < j, 1-indexed).
-      Column format: {feature_key}_{i:03d}x{j:03d}
+      Column format: {parcel_i_label}_x_{parcel_j_label}  (FNC domain names)
       Row-aligned with labels.csv.
 
   labels.csv
@@ -29,6 +29,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from executor.atlas_labels import column_label as _col_label
 from executor.extract_roi_values import _build_covariate_rows  # reuse covariate logic
 
 
@@ -153,7 +154,7 @@ def write_fedlamp_connectivity_csv(
         n = atlas_n_parcels.get(key, 0)
         for i in range(1, n + 1):
             for j in range(i + 1, n + 1):
-                columns.append(f"{key}_{i:03d}x{j:03d}")
+                columns.append(_col_label(key, i, j))
 
     os.makedirs(output_dir, exist_ok=True)
     data_path = os.path.join(output_dir, data_filename)
@@ -173,7 +174,7 @@ def write_fedlamp_connectivity_csv(
                 mean_matrix = np.mean(np.stack(mats, axis=0), axis=0)
                 for i in range(n):
                     for j in range(i + 1, n):
-                        row[f"{key}_{i+1:03d}x{j+1:03d}"] = round(float(mean_matrix[i, j]), 6)
+                        row[_col_label(key, i + 1, j + 1)] = round(float(mean_matrix[i, j]), 6)
             writer.writerow(row)
 
     logging.info(
@@ -244,7 +245,7 @@ def _write_mock_fedlamp_csvs(
         n = atlas_n_parcels[key]
         for i in range(1, n + 1):
             for j in range(i + 1, n + 1):
-                columns.append(f"{key}_{i:03d}x{j:03d}")
+                columns.append(_col_label(key, i, j))
 
     # Subject IDs: read from participants.tsv if available, otherwise synthesise
     # with zero-padding to match BIDS convention (sub-01, sub-02, ...).
