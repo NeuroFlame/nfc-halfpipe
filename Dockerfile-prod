@@ -73,9 +73,9 @@ os.remove(tmp)"
 # ──────────────────────────────────────────────────────────────────────────────
 RUN /opt/conda/envs/fmriprep/bin/python3 -c "\
 import urllib.request, shutil, os; \
-url = 'http://atlas.brainnetome.org/files/BNA_MPM_thr25_1.25mm.nii.gz'; \
+url = 'https://afni.nimh.nih.gov/pub/dist/atlases/afni_atlases_dist/BN_Atlas_246_1mm.nii.gz'; \
 tmp = '/tmp/BNA_246.nii.gz'; \
-print('Downloading Brainnetome Atlas 246 ...'); \
+print('Downloading Brainnetome Atlas 246 (AFNI mirror) ...'); \
 urllib.request.urlretrieve(url, tmp); \
 shutil.copy(tmp, '/atlases/BNA_246.nii.gz'); \
 os.remove(tmp); \
