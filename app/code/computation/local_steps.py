@@ -88,16 +88,24 @@ def run_halfpipe(site_data: dict, parameters: dict, output_dir: str, data_dir: s
     if derivatives_path and os.path.isdir(derivatives_path):
         out_deriv = os.path.join(output_dir, "halfpipe_derivatives")
         if not _is_subpath(output_dir, derivatives_path) and not os.path.isdir(out_deriv):
-            shutil.copytree(derivatives_path, out_deriv, dirs_exist_ok=True)
-            logging.info("HALFpipe derivatives persisted to %s", out_deriv)
+            try:
+                shutil.copytree(derivatives_path, out_deriv, dirs_exist_ok=True)
+                logging.info("HALFpipe derivatives persisted to %s", out_deriv)
+            except shutil.Error as exc:
+                n = len(exc.args[0]) if exc.args else 0
+                logging.warning("HALFpipe derivatives copy: %d file(s) skipped → %s", n, out_deriv)
 
     # Persist halfpipe_workdir to output_dir/halfpipe_workdir when it lives
     # outside the output directory (e.g. site_data.halfpipe_workdir is a custom path).
     if os.path.isdir(halfpipe_workdir) and not _is_subpath(output_dir, halfpipe_workdir):
         out_workdir = os.path.join(output_dir, "halfpipe_workdir")
         if not os.path.isdir(out_workdir):
-            shutil.copytree(halfpipe_workdir, out_workdir, dirs_exist_ok=True)
-            logging.info("HALFpipe workdir persisted to %s", out_workdir)
+            try:
+                shutil.copytree(halfpipe_workdir, out_workdir, dirs_exist_ok=True)
+                logging.info("HALFpipe workdir persisted to %s", out_workdir)
+            except shutil.Error as exc:
+                n = len(exc.args[0]) if exc.args else 0
+                logging.warning("HALFpipe workdir copy: %d file(s) skipped → %s", n, out_workdir)
 
     # When halfpipe ran (run_halfpipe=true) but produced no halfpipe/ derivatives
     # (all subjects failed on stub data, or fMRIPrep-only run), n_subjects=0 and
