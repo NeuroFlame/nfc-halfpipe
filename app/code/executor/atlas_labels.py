@@ -126,11 +126,31 @@ for _domain, _count in _NEUROMARK1_DOMAINS:
 BRAINNETOME246_LABELS: dict[int, str] = {i: f"BNA-{i}" for i in range(1, 247)}
 
 # ---------------------------------------------------------------------------
+# Schaefer 2018 400-parcel / 17-network labels
+# Parcel names follow the same LH_/RH_ convention as SCHAEFER200_LABELS.
+# Templateflow ships a companion TSV at:
+#   tpl-MNI152NLin2009cAsym_res-02_atlas-Schaefer2018_desc-400Parcels17Networks_dseg.tsv
+# To replace these placeholders with anatomical names after building, run inside
+# the image:
+#   python3 -c "
+#   import templateflow.api as tf, pandas as pd
+#   tsv = tf.get('MNI152NLin2009cAsym', atlas='Schaefer2018',
+#                desc='400Parcels17Networks', resolution='02', extension='.tsv')
+#   df = pd.read_csv(str(tsv), sep='\t')
+#   print(df['name'].tolist())
+#   "
+# then replace the dict comprehension below with the verified mapping.
+# ---------------------------------------------------------------------------
+
+SCHAEFER400_LABELS: dict[int, str] = {i: f"Schaefer400_{i}" for i in range(1, 401)}
+
+# ---------------------------------------------------------------------------
 # Lookup helper
 # ---------------------------------------------------------------------------
 
 _ATLAS_LABEL_TABLES: dict[str, dict[int, str]] = {
     "connectivity_atlas-Schaefer200":      SCHAEFER200_LABELS,
+    "connectivity400_atlas-Schaefer400":   SCHAEFER400_LABELS,
     "neuromark_atlas-NeuroMark1":          NEUROMARK1_LABELS,
     "brainnetome_atlas-Brainnetome246":    BRAINNETOME246_LABELS,
 }

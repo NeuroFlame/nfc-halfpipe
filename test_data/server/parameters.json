@@ -38,6 +38,13 @@
         "suffix": "atlas",
         "tags": { "desc": "Brainnetome246" },
         "path": "/atlases/BNA_246.nii.gz"
+      },
+      {
+        "_note": "Schaefer 2018 400-parcel 17-network atlas (MNI152NLin2009cAsym 2mm). Baked into the image at build time.",
+        "datatype": "ref",
+        "suffix": "atlas",
+        "tags": { "desc": "Schaefer400" },
+        "path": "/atlases/Schaefer2018_400Parcels_17Networks_order_FSLMNI152_2mm.nii.gz"
       }
     ],
     "settings": [
@@ -89,6 +96,14 @@
         "type": "atlas_based_connectivity",
         "setting": "default",
         "atlases": ["Brainnetome246"],
+        "min_region_coverage": 0.8
+      },
+      {
+        "_note": "Schaefer 400 connectivity: 400x400 FC matrix across 400-parcel 17-network cortical parcellation.",
+        "name": "connectivity400",
+        "type": "atlas_based_connectivity",
+        "setting": "default",
+        "atlases": ["Schaefer400"],
         "min_region_coverage": 0.8
       }
     ],

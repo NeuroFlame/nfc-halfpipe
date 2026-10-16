@@ -33,7 +33,21 @@ shutil.copy(str(paths[0]), '/atlases/Schaefer2018_200Parcels_17Networks_order_FS
 print(f'Atlas installed from {paths[0]}')"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 3. Download NeuroMark fMRI 1.0 and convert to a winner-takes-all integer
+# 3. Download Schaefer 2018 400-parcel 17-network atlas (MNI152NLin2009cAsym
+#    2 mm) — same templateflow source as the 200-parcel atlas above.
+#    Destination path must match the Schaefer400 ref entry in parameters.json.
+# ──────────────────────────────────────────────────────────────────────────────
+RUN /opt/nfc-env/bin/python3 -c "\
+from pathlib import Path; \
+import shutil; \
+import templateflow.api as tf; \
+r = tf.get('MNI152NLin2009cAsym', atlas='Schaefer2018', desc='400Parcels17Networks', resolution='02', extension='.nii.gz'); \
+paths = [r] if isinstance(r, Path) else list(r); \
+shutil.copy(str(paths[0]), '/atlases/Schaefer2018_400Parcels_17Networks_order_FSLMNI152_2mm.nii.gz'); \
+print(f'Schaefer 400 installed from {paths[0]}')"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. Download NeuroMark fMRI 1.0 and convert to a winner-takes-all integer
 #    parcellation atlas.
 #
 #    Source: Du et al. (2020) NeuroImage:Clinical 28:102375
@@ -65,7 +79,7 @@ print('Saved /atlases/NeuroMark_1.0_parcellation.nii.gz'); \
 os.remove(tmp)"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 4. Download Brainnetome Atlas 246 (BNA, Fan et al. 2016 Cereb Cortex).
+# 5. Download Brainnetome Atlas 246 (BNA, Fan et al. 2016 Cereb Cortex).
 #
 #    Source: atlas.brainnetome.org via nilearn (already in the fmriprep env).
 #    246 parcels: 210 cortical (105/hemi) + 36 subcortical (18/hemi).
@@ -82,7 +96,7 @@ os.remove(tmp); \
 print('Saved /atlases/BNA_246.nii.gz')"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 5. Application code
+# 6. Application code
 # ──────────────────────────────────────────────────────────────────────────────
 COPY ./app/ /workspace/app/
 COPY ./system/entry_central.py /workspace/system/entry_central.py
