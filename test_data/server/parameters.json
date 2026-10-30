@@ -1,8 +1,7 @@
 {
   "_note": "Mock test run: run_halfpipe=false uses mock_derivatives from each site's data.json. Set run_halfpipe=true to invoke HALFpipe on real data; the site's data directory (set in the NeuroFLAME UI) is used as the BIDS root.",
   "run_halfpipe": false,
-  "run_federation": false,
-  "aggregation_types": ["qc_metadata", "roi_values", "atlas_connectivity"],
+  "aggregation_types": ["qc_metadata"],
   "halfpipe_spec": {
     "version": "1.0.0",
     "files": [
@@ -108,15 +107,6 @@
       }
     ],
     "models": []
-  },
-  "roi_extraction": {
-    "_note": "Schaefer 2018 200-parcel 17-network atlas in MNI152NLin2009cAsym 2mm space. Must be available at this path inside each site's container when run_halfpipe=true.",
-    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz",
-    "features": ["reho", "alff"]
-  },
-  "voxelwise_maps": {
-    "spreadsheet": null,
-    "covariates": []
   },
   "min_subjects": 5,
   "n_procs": 1

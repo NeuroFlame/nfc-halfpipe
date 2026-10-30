@@ -1,4 +1,4 @@
-"""Site-side computation steps for HALFpipe federated analysis."""
+"""Site-side computation steps for HALFpipe preprocessing."""
 
 import json
 import logging
@@ -9,10 +9,7 @@ from framework import with_state
 
 from executor.run_halfpipe import run_halfpipe_and_get_qc
 from executor.extract_qc_metadata import extract_qc_metadata
-from executor.extract_roi_values import extract_roi_values, write_subject_roi_csv
-from executor.extract_connectivity import extract_connectivity_matrices
 from executor.write_fedlamp_export import write_fedlamp_connectivity_csv
-from executor.run_site_group_level import run_site_group_level
 
 
 # ------------------------------------------------------------------ #
@@ -127,128 +124,20 @@ def run_halfpipe(site_data: dict, parameters: dict, output_dir: str, data_dir: s
                 "using mock QC data (%d subjects)", mock["n_subjects"],
             )
 
+    # Write per-atlas FedLAMP CSVs (data_Schaefer*.csv, labels.csv, …).
+    write_fedlamp_connectivity_csv(
+        derivatives_path=halfpipe_result.get("derivatives_path"),
+        site_data=site_data,
+        params=parameters,
+        output_dir=output_dir,
+        bids_directory=bids_directory,
+    )
+
     qc_payload = extract_qc_metadata(
         n_subjects=halfpipe_result["n_subjects"],
         qc_summary=halfpipe_result["qc_summary"],
     )
-    # Store the full halfpipe_result as local state for downstream steps.
     return with_state(qc_payload, halfpipe_result)
-
-
-# ------------------------------------------------------------------ #
-# Phase 2a — ROI values                                               #
-# ------------------------------------------------------------------ #
-
-def send_roi_values(_incoming, parameters: dict, state: dict, output_dir: str, data_dir: str):
-    """Extract atlas-parcellated feature values if roi_values / subject_csv is enabled.
-
-    Returns None when run_federation is false (default) or neither aggregation type
-    is requested, which the server treats as a no-op for this site.
-    """
-    if parameters.get("halfpipe_only"):
-        return None
-    if not parameters.get("run_federation", False):
-        return None
-    aggregation_types = _as_list(parameters.get("aggregation_types", []))
-    if "roi_values" not in aggregation_types and "subject_csv" not in aggregation_types:
-        return None
-
-    site_data = _read_site_data(data_dir)
-    derivatives_path = state.get("derivatives_path")
-    payload = {"n_subjects": state.get("n_subjects", 0)}
-
-    if "roi_values" in aggregation_types:
-        payload["roi_values"] = extract_roi_values(
-            derivatives_path=derivatives_path,
-            site_data=site_data,
-            params=parameters,
-        )
-
-    if "subject_csv" in aggregation_types:
-        write_subject_roi_csv(
-            derivatives_path=derivatives_path,
-            site_data=site_data,
-            params=parameters,
-            output_dir=output_dir,
-            bids_directory=site_data.get("bids_directory") or data_dir,
-        )
-
-    return payload
-
-
-# ------------------------------------------------------------------ #
-# Phase 2b — Atlas connectivity                                        #
-# ------------------------------------------------------------------ #
-
-def send_atlas_connectivity(_incoming, parameters: dict, state: dict, output_dir: str, data_dir: str):
-    """Extract atlas-based connectivity matrices if atlas_connectivity is enabled.
-
-    Also writes per-subject connectivity CSVs for Fed-LAMP when fedlamp_export
-    is in aggregation_types. The two modes are independent — either or both can
-    be requested.
-
-    Returns None when run_federation is false (default), or neither atlas_connectivity
-    nor fedlamp_export is requested.
-    """
-    if parameters.get("halfpipe_only"):
-        return None
-    aggregation_types = _as_list(parameters.get("aggregation_types", []))
-    want_federation = parameters.get("run_federation", False) and "atlas_connectivity" in aggregation_types
-    want_fedlamp = "fedlamp_export" in aggregation_types
-
-    if not want_federation and not want_fedlamp:
-        return None
-
-    site_data = _read_site_data(data_dir)
-    derivatives_path = state.get("derivatives_path")
-
-    if want_fedlamp:
-        write_fedlamp_connectivity_csv(
-            derivatives_path=derivatives_path,
-            site_data=site_data,
-            params=parameters,
-            output_dir=output_dir,
-            bids_directory=site_data.get("bids_directory") or data_dir,
-        )
-
-    if not want_federation:
-        return None
-
-    connectivity = extract_connectivity_matrices(
-        derivatives_path=derivatives_path,
-        site_data=site_data,
-        params=parameters,
-    )
-    return {
-        "n_subjects": state.get("n_subjects", 0),
-        "connectivity": connectivity,
-    }
-
-
-# ------------------------------------------------------------------ #
-# Phase 2c — Site group-level / voxelwise                             #
-# ------------------------------------------------------------------ #
-
-def send_site_stats(_incoming, parameters: dict, state: dict, output_dir: str, data_dir: str):
-    """Run within-site group-level analysis and return stat maps if enabled.
-
-    Returns None when run_regression is false (default) or voxelwise_maps is not requested.
-    """
-    if parameters.get("halfpipe_only"):
-        return None
-    if not parameters.get("run_federation", False):
-        return None
-    aggregation_types = _as_list(parameters.get("aggregation_types", []))
-    if "voxelwise_maps" not in aggregation_types:
-        return None
-
-    site_data = _read_site_data(data_dir)
-    return run_site_group_level(
-        derivatives_path=state.get("derivatives_path"),
-        site_data=site_data,
-        params=parameters,
-        output_dir=output_dir,
-    )
 
 
 # ------------------------------------------------------------------ #
@@ -275,11 +164,6 @@ def build_outputs(global_results: dict, output_dir: str):
 # ------------------------------------------------------------------ #
 # Helpers                                                              #
 # ------------------------------------------------------------------ #
-
-def _as_list(value) -> list:
-    """Normalize a string-or-list parameter value to a plain list."""
-    return [value] if isinstance(value, str) else list(value or [])
-
 
 def _is_subpath(parent: str, child: str) -> bool:
     """Return True when child is the same as or nested inside parent."""
