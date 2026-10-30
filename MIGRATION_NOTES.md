@@ -1,3 +1,14 @@
+# Branch Structure
+
+The repository has two long-lived branches:
+
+- **`main`** — preprocessing and connectivity export only (3-step workflow: `RUN_HALFPIPE` → QC aggregation → `ACCEPT_GLOBAL_RESULTS`). Per-atlas FedLAMP CSVs (`data_*.csv`, `labels.csv`) are written locally; only QC metadata is shared across sites.
+- **`halfpipe-federated`** — full 9-step federated workflow, including federated connectivity matrices (`atlas_connectivity`), ROI value aggregation (`roi_values`), and voxelwise meta-analysis (`voxelwise_maps`). Branched from `main` at commit `a3a6b75`.
+
+`main` was promoted from the `preprocess-only` branch. The `halfpipe-federated` branch preserves the prior `main` state.
+
+---
+
 # Migration to computation-nvflare-boilerplate
 
 This computation runs on

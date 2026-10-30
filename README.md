@@ -1,45 +1,35 @@
 ## nfc-halfpipe
 
-Federated fMRI analysis using [HALFpipe](https://github.com/HALFpipe/HALFpipe) on the NeuroFLAME platform. Each participating site runs HALFpipe's preprocessing and feature extraction locally; only summary statistics are shared across sites.
+fMRI preprocessing and connectivity export using [HALFpipe](https://github.com/HALFpipe/HALFpipe) on the NeuroFLAME platform. Each participating site runs HALFpipe's full preprocessing and feature extraction locally; only QC summary statistics are shared across sites. Per-subject connectivity matrices are written locally at each site as FedLAMP CSVs, ready for downstream federated analysis computations.
 
-Four aggregation modes are supported (and can be combined):
-
-| Mode | What sites share | Output |
-|---|---|---|
-| `qc_metadata` | Motion QC stats (mean FD, FD%) | Cross-site weighted QC report |
-| `roi_values` | Atlas-parcellated feature means (ReHo, ALFF, …) | Weighted global parcel means |
-| `atlas_connectivity` | Per-subject Fisher-z correlation matrices (one per atlas) | Federated mean correlation matrix in `global_results.json` + interactive heatmap in `index.html` |
-| `voxelwise_maps` | Within-site NIfTI stat maps | Weighted meta-analysis maps |
-| `subject_csv` | Nothing — files are written locally only | `Data.csv` + `Covariate.csv` per site, ready for [nfc-combatdc](../nfc-combatdc/) |
-| `fedlamp_export` | Nothing — files are written locally only | `FedLAMP_connectivity_Data.csv` + `FedLAMP_Covariate.csv` per site, ready for [nfc-fedlamp](../nfc-fedlamp/) |
+> **Branch structure:**
+> - `main` — preprocessing and connectivity export only (this branch)
+> - `halfpipe-federated` — full 9-step federated workflow (federated connectivity, ROI values, voxelwise maps)
 
 ---
 
-## Intended Workflow
+## What this computation does
 
-nfc-halfpipe is designed as a **two-stage pipeline**: a lightweight federated analysis first, followed optionally by a deeper federated learning computation on the same outputs.
+Each site's computation runs in three steps:
 
-**Stage 1 — Federated quality check and group-level summary**
+1. **RUN_HALFPIPE** — HALFpipe preprocessing and feature extraction run on the site's BIDS data. Per-atlas FedLAMP connectivity CSVs (`data_Schaefer200.csv`, `data_Schaefer400.csv`, etc.) and a `labels.csv` are written to the output directory.
+2. **Server aggregation** — The server collects QC statistics (subject counts, motion metrics) from all sites and computes weighted cross-site means.
+3. **ACCEPT_GLOBAL_RESULTS** — Each site receives the federated QC summary and writes `global_results.json` and `index.html`.
 
-Run nfc-halfpipe with `qc_metadata`, `roi_values`, and `atlas_connectivity`. This produces:
-- A cross-site QC report (total subjects, motion statistics per site) that confirms the data is usable before committing to a longer analysis.
-- Weighted group-level connectivity maps and parcel means that give an interpretable preview of the signal across sites.
+Nothing beyond QC metadata is shared with the server. All connectivity data stays local.
 
-If the QC is unacceptable (excessive motion, too few subjects) or the group-level maps show no meaningful signal, you can stop here without running a more expensive downstream computation.
+---
 
-**Stage 2 — Deeper federated analysis (optional)**
+## Supported Atlases
 
-If Stage 1 looks good, add `fedlamp_export` to `aggregation_types`. This writes per-subject connectivity feature matrices locally at each site, ready for a downstream [nfc-fedlamp](../nfc-fedlamp/) computation that performs federated label-based dimensional prediction on the HALFpipe outputs.
+Four atlases are baked into the Docker image at build time:
 
-```
-nfc-halfpipe  →  federated QC + group connectivity (gate check)
-                 ↓ if data quality is sufficient
-              →  fedlamp_export (per-subject files, local only)
-                 ↓
-nfc-fedlamp   →  federated dimensional prediction
-```
-
-The two stages can run in sequence within a single nfc-halfpipe job by including all relevant modes in `aggregation_types` from the start, or as separate runs if you want to review Stage 1 results before committing.
+| Atlas | Parcels | Image path | FedLAMP output file |
+|---|---|---|---|
+| Schaefer 2018 (200-parcel, 17-network) | 200 | `/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz` | `data_Schaefer200.csv` |
+| Schaefer 2018 (400-parcel, 17-network) | 400 | `/atlases/Schaefer2018_400Parcels_17Networks_order_FSLMNI152_2mm.nii.gz` | `data_Schaefer400.csv` |
+| NeuroMark fMRI 1.0 ([Du et al., 2020](https://doi.org/10.1016/j.nicl.2020.102375)) | 53 | `/atlases/NeuroMark_1.0_parcellation.nii.gz` | `data_NeuroMark1.csv` |
+| Brainnetome Atlas 246 ([Fan et al., 2016](https://doi.org/10.1093/cercor/bhw157)) | 246 | `/atlases/BNA_246.nii.gz` | `data_Brainnetome246.csv` |
 
 ---
 
@@ -121,18 +111,26 @@ docker build -t nfc-halfpipe:dev -f Dockerfile-prod .
 
 If you see `exec /bin/sh: exec format error` during `docker build`, you are on Linux x86\_64 but trying to build `Dockerfile-dev` (ARM64). Switch to `Dockerfile-prod` as shown above.
 
-**4. Check results**
+---
+
+## Check Results
+
+After a run, each site's output directory contains:
 
 ```
-test_output/simulate_job/site1/global_results.json   ← aggregated results
-test_output/simulate_job/site1/index.html             ← interactive HTML report
-test_output/simulate_job/site2/global_results.json
-test_output/simulate_job/site2/index.html
-test_output/simulate_job/site3/global_results.json
-test_output/simulate_job/site3/index.html
+{output_dir}/
+├── data_Schaefer200.csv      ← per-subject connectivity matrix rows (200-parcel atlas)
+├── data_Schaefer400.csv      ← per-subject connectivity matrix rows (400-parcel atlas)
+├── data_NeuroMark1.csv       ← per-subject connectivity matrix rows (NeuroMark 53 ICs)
+├── data_Brainnetome246.csv   ← per-subject connectivity matrix rows (BNA 246 parcels)
+├── labels.csv                ← per-subject metadata (subject_id, demographics, QC metrics)
+├── global_results.json       ← federated QC summary from server
+├── index.html                ← interactive QC report (open in browser)
+└── halfpipe_reports/         ← HALFpipe's own per-subject QC report
+    └── index.html
 ```
 
-Open any `index.html` in a browser to view the federated QC summary, per-feature ROI value tables, and optional voxelwise map catalogue.
+Open `index.html` for the federated QC summary. Open `halfpipe_reports/index.html` for HALFpipe's detailed per-subject report.
 
 ---
 
@@ -142,31 +140,34 @@ Open any `index.html` in a browser to view the federated QC summary, per-feature
 nfc-halfpipe/
 ├── app/
 │   ├── code/
-│   │   ├── _utils/utils.py            # Path helpers (data, output, parameters directories)
+│   │   ├── _utils/utils.py                 # Path helpers (data, output, parameters directories)
+│   │   ├── computation/
+│   │   │   ├── spec.py                     # 3-step workflow declaration
+│   │   │   ├── local_steps.py              # run_halfpipe, build_outputs
+│   │   │   └── remote_steps.py             # aggregate_qc_step
 │   │   ├── executor/
-│   │   │   ├── executor.py            # HALFpipeExecutor — routes all NVFlare tasks
-│   │   │   ├── run_halfpipe.py        # Runs HALFpipe subprocess (or returns mock data)
-│   │   │   ├── extract_qc_metadata.py # Packages motion QC for transmission
-│   │   │   ├── extract_roi_values.py  # Extracts atlas-parcellated means from NIfTI maps
-│   │   │   ├── extract_connectivity.py# Reads correlation matrix TSVs, applies Fisher z-transform
-│   │   │   └── run_site_group_level.py# Runs halfpipe group-level within a site
-│   │   ├── controller/
-│   │   │   └── controller.py          # HALFpipeController — multi-round broadcast logic
-│   │   └── aggregator/
-│   │       ├── aggregator.py          # HALFpipeAggregator — three accept methods + aggregate
-│   │       └── aggregate_results.py   # Pure aggregation functions (no NVFlare deps)
+│   │   │   ├── run_halfpipe.py             # Runs HALFpipe subprocess (or returns mock data)
+│   │   │   ├── extract_qc_metadata.py      # Packages motion QC for transmission
+│   │   │   ├── write_fedlamp_export.py     # Writes per-atlas data_*.csv + labels.csv
+│   │   │   ├── atlas_labels.py             # Parcel label tables for all 4 atlases
+│   │   │   ├── generate_report.py          # Generates index.html QC report
+│   │   │   ├── extract_connectivity.py     # (halfpipe-federated branch only)
+│   │   │   ├── extract_roi_values.py       # (halfpipe-federated branch only)
+│   │   │   └── run_site_group_level.py     # (halfpipe-federated branch only)
+│   │   └── framework/                      # NVFlare boilerplate (paths, step decorators)
 │   └── config/
-│       ├── config_fed_client.json     # Task list for executor
-│       └── config_fed_server.json     # Controller + aggregator wiring
+│       ├── config_fed_client.json          # Task list for executor
+│       └── config_fed_server.json          # Controller + aggregator wiring
 ├── test_data/
-│   ├── server/parameters.json         # Computation parameters (aggregation_types, halfpipe_spec, …)
-│   ├── site1/data.json                # Site 1: mock_derivatives (derivatives_directory optional)
-│   ├── site2/data.json                # Site 2
-│   └── site3/data.json                # Site 3
-├── makeJob.py                         # Creates job/ folder from app/ config
-├── debugger.py                           # Launches NVFlare simulator
-├── Dockerfile-dev                     # Dev image (swap FROM for production HALFpipe image)
-└── display_notes.md                   # Platform-facing computation description
+│   ├── server/parameters.json             # Computation parameters
+│   ├── site1/data.json                    # Site 1: mock_derivatives
+│   ├── site2/data.json                    # Site 2
+│   └── site3/data.json                    # Site 3
+├── makeJob.py                             # Creates job/ folder from app/ config
+├── debugger.py                            # Launches NVFlare simulator
+├── Dockerfile-prod                        # Production image (amd64, halfpipe:1.3.2 base)
+├── Dockerfile-dev                         # Dev image (arm64 / Apple Silicon)
+└── display_notes.md                       # Platform-facing computation description
 ```
 
 ---
@@ -178,21 +179,45 @@ nfc-halfpipe/
 ```json
 {
   "run_halfpipe": false,
-  "aggregation_types": ["qc_metadata", "roi_values"],
-  "halfpipe_spec": { ... },
-  "roi_extraction": {
-    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks.nii.gz",
-    "features": ["reho", "falff"]
+  "aggregation_types": ["qc_metadata"],
+  "halfpipe_spec": {
+    "version": "1.0.0",
+    "files": [
+      { "datatype": "func", "suffix": "bold",
+        "tags": { "task": "rest" },
+        "path": "{bids_directory}/sub-{subject}/func/sub-{subject}_task-rest_bold.nii.gz" },
+      { "datatype": "anat", "suffix": "T1w", "tags": {},
+        "path": "{bids_directory}/sub-{subject}/anat/sub-{subject}_T1w.nii.gz" },
+      { "datatype": "ref", "suffix": "atlas", "tags": { "desc": "Schaefer200" },
+        "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz" },
+      { "datatype": "ref", "suffix": "atlas", "tags": { "desc": "Schaefer400" },
+        "path": "/atlases/Schaefer2018_400Parcels_17Networks_order_FSLMNI152_2mm.nii.gz" },
+      { "datatype": "ref", "suffix": "atlas", "tags": { "desc": "NeuroMark1" },
+        "path": "/atlases/NeuroMark_1.0_parcellation.nii.gz" },
+      { "datatype": "ref", "suffix": "atlas", "tags": { "desc": "Brainnetome246" },
+        "path": "/atlases/BNA_246.nii.gz" }
+    ],
+    "settings": [
+      { "name": "default", "ica_aroma": true,
+        "bandpass_filter": { "type": "gaussian", "lp_width": 125.0 },
+        "smoothing": { "fwhm": 6.0 },
+        "grand_mean_scaling": { "mean": 10000.0 } }
+    ],
+    "features": [
+      { "name": "reho",  "type": "reho",  "setting": "default" },
+      { "name": "alff",  "type": "alff",  "setting": "default" },
+      { "name": "connectivity",   "type": "atlas_based_connectivity",
+        "setting": "default", "atlases": ["Schaefer200"],    "min_region_coverage": 0.8 },
+      { "name": "connectivity400","type": "atlas_based_connectivity",
+        "setting": "default", "atlases": ["Schaefer400"],    "min_region_coverage": 0.8 },
+      { "name": "neuromark",      "type": "atlas_based_connectivity",
+        "setting": "default", "atlases": ["NeuroMark1"],     "min_region_coverage": 0.5 },
+      { "name": "brainnetome",    "type": "atlas_based_connectivity",
+        "setting": "default", "atlases": ["Brainnetome246"], "min_region_coverage": 0.8 }
+    ],
+    "models": []
   },
-  "voxelwise_maps": {
-    "spreadsheet": null,
-    "covariates": []
-  },
-  "subject_csv_config": {
-    "data_file": "Data.csv",
-    "covariate_file": "Covariate.csv"
-  },
-  "min_subjects": 1,
+  "min_subjects": 5,
   "n_procs": 1
 }
 ```
@@ -204,12 +229,7 @@ nfc-halfpipe/
   "derivatives_directory": null,
   "mock_derivatives": {
     "n_subjects": 12,
-    "qc_metadata": { "mean_fd": 0.38, "mean_fd_perc": 8.2 },
-    "roi_values": {
-      "reho": { "parcel_001": 0.412, "parcel_002": 0.367 },
-      "falff": { "parcel_001": 0.621, "parcel_002": 0.587 }
-    },
-    "voxelwise_stats": {}
+    "qc_metadata": { "mean_fd": 0.38, "mean_fd_perc": 8.2 }
   }
 }
 ```
@@ -238,7 +258,7 @@ In `parameters.json`, set `"run_halfpipe": true` and provide a valid `halfpipe_s
 {
   "run_halfpipe": true,
   "fs_license_path": "/workspace/license.txt",
-  "aggregation_types": ["qc_metadata", "roi_values"],
+  "aggregation_types": ["qc_metadata"],
   "halfpipe_spec": {
     "files": [
       { "datatype": "func", "suffix": "bold",
@@ -246,25 +266,21 @@ In `parameters.json`, set `"run_halfpipe": true` and provide a valid `halfpipe_s
         "path": "{bids_directory}/sub-{sub}/func/sub-{sub}_task-rest_bold.nii.gz" },
       { "datatype": "anat", "suffix": "T1w", "tags": {},
         "path": "{bids_directory}/sub-{sub}/anat/sub-{sub}_T1w.nii.gz" },
-      { "datatype": "fmap", "suffix": "epi",
-        "tags": { "dir": "AP" },
-        "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-AP_epi.nii.gz" },
-      { "datatype": "fmap", "suffix": "epi",
-        "tags": { "dir": "PA" },
-        "path": "{bids_directory}/sub-{sub}/fmap/sub-{sub}_dir-PA_epi.nii.gz" }
+      { "datatype": "ref", "suffix": "atlas", "tags": { "desc": "Schaefer200" },
+        "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz" }
     ],
     "settings": [ { "name": "default", "ica_aroma": false,
                     "bandpass_filter": { "type": "gaussian", "lp_width": 125.0 } } ],
     "features": [
       { "name": "reho",  "type": "reho",  "setting": "default" },
-      { "name": "falff", "type": "falff", "setting": "default" }
+      { "name": "alff",  "type": "alff",  "setting": "default" },
+      { "name": "connectivity", "type": "atlas_based_connectivity",
+        "setting": "default", "atlases": ["Schaefer200"], "min_region_coverage": 0.8 }
     ],
     "models": []
   },
-  "roi_extraction": {
-    "atlas_path": "/atlases/Schaefer2018_200Parcels_17Networks.nii.gz",
-    "features": ["reho", "falff"]
-  }
+  "min_subjects": 5,
+  "n_procs": 4
 }
 ```
 
@@ -274,19 +290,13 @@ Omit the `fmap` entries if your dataset has no fieldmaps — halfpipe will run w
 
 Each site's data directory (configured in the NeuroFLAME UI) must be the BIDS root for that site. The computation reads it automatically via `DATA_DIR` — no `bids_directory` field is required in `data.json`. Optionally add `"derivatives_directory"` to reuse existing HALFpipe outputs.
 
-**4. Install nibabel for ROI extraction and voxelwise aggregation**
-
-Uncomment the `nibabel` line in `requirements.txt` or add it to the Dockerfile.
-
-**5. Run the simulation inside Docker**
-
-When running `debugger.py` inside the production container, override `PYTHONPATH` so the NVFlare simulator loads code from your mounted repo rather than the image's baked-in `/workspace/app/code/`:
+**4. Run the simulation inside Docker**
 
 ```bash
 docker run --rm --platform linux/amd64 \
   -v "$(pwd):/workspace/repo" \
   -v "/path/to/bids:/workspace/data:ro" \
-  -v "$HOME/license.txt:/workspace/license.txt:ro" \
+  -v "$HOME/license.txt:/workspace/data/license.txt:ro" \
   -v "/path/to/output:/workspace/output" \
   -e "PYTHONPATH=/workspace/repo/app/code/" \
   -e "PARAMETERS_FILE_PATH=/workspace/repo/test_data/server/parameters_tier4test.json" \
@@ -296,148 +306,41 @@ docker run --rm --platform linux/amd64 \
     -c site1
 ```
 
-The image bakes `DATA_DIR=/workspace/data/` and `OUTPUT_DIR=/workspace/output/` as defaults, so mount your BIDS root at `/workspace/data` and your output directory at `/workspace/output`. The `PYTHONPATH` override is required because the image ships with an older copy of the app code at `/workspace/app/code/` that takes precedence over NVFlare's job-staging paths without it.
+The image bakes `DATA_DIR=/workspace/data/` and `OUTPUT_DIR=/workspace/output/` as defaults. The `PYTHONPATH` override is required because the image ships with an older copy of the app code at `/workspace/app/code/` that takes precedence over NVFlare's job-staging paths without it.
+
+> **Security note:** The FreeSurfer license file (`license.txt`) must never be committed to this repository. Copy it into each site's data directory or mount it directly at runtime.
 
 ---
 
-## Atlas-Based Connectivity
+## Output Files
 
-Add `"atlas_connectivity"` to `aggregation_types` to federate full functional connectivity matrices:
+Each site's output directory receives these files after a successful run:
 
-```json
-"aggregation_types": ["qc_metadata", "atlas_connectivity"],
-"halfpipe_spec": {
-  "files": [
-    { ... },
-    {
-      "datatype": "ref",
-      "suffix": "atlas",
-      "tags": { "desc": "Schaefer200" },
-      "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz"
-    }
-  ],
-  "features": [
-    {
-      "name": "connectivity",
-      "type": "atlas_based_connectivity",
-      "setting": "default",
-      "atlases": ["Schaefer200"],
-      "min_region_coverage": 0.8
-    }
-  ]
-}
-```
-
-**How it works:**
-
-1. HALFpipe's `atlas_based_connectivity` feature extracts the mean BOLD time series for every parcel in the atlas, then computes the full N×N covariance and correlation matrix per subject.
-2. Each site's executor reads the per-subject `*_correlation_matrix.tsv` files, Fisher z-transforms each matrix (`atanh(r)`), and averages across subjects to produce a site-mean Fisher-z matrix.
-3. The server computes a subject-count-weighted mean across sites, then back-transforms (`tanh`) to produce the federated mean correlation matrix.
-4. The result appears in `global_results.json` under `connectivity.matrices` and is rendered in `index.html` as:
-   - An interactive blue→white→red **correlation heatmap** with colored network-annotation bands on both axes.
-   - For NeuroMark: a **glass-brain connectome** showing the 53 component nodes at their real MNI coordinates projected onto axial and sagittal views. Edges are colored red (positive FC) or blue (negative FC), with an interactive threshold slider.
-
-**Built-in atlases:**
-
-Both atlases below are baked into the Docker image at build time and require no manual setup:
-
-| Atlas | Parcels | Location in image | Report features |
-|---|---|---|---|
-| Schaefer 2018 (200-parcel, 17-network) | 200 | `/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz` | Annotated heatmap with 7-network color bands (Yeo convention) |
-| NeuroMark fMRI 1.0 ([Du et al., 2020](https://doi.org/10.1016/j.nicl.2020.102375)) | 53 | `/atlases/NeuroMark_1.0_parcellation.nii.gz` | Annotated heatmap + glass-brain connectome with axial/sagittal views |
-
-The NeuroMark parcellation is generated at image build time from the published 4D Z-map NIfTI (downloaded from the [GIFT/trendscenter repository](https://github.com/trendscenter/gift)) using winner-takes-all assignment per voxel (threshold |Z| ≥ 1.5). The 53 ICs span 7 functional domains: SubCortical, Auditory, SensoriMotor, Visual, CogCtrl, DMN, Cerebellar.
-
-To enable both atlases, add both features to `halfpipe_spec`:
-
-```json
-"files": [
-  { "datatype": "ref", "suffix": "atlas", "tags": { "desc": "Schaefer200" },
-    "path": "/atlases/Schaefer2018_200Parcels_17Networks_order_FSLMNI152_2mm.nii.gz" },
-  { "datatype": "ref", "suffix": "atlas", "tags": { "desc": "NeuroMark1" },
-    "path": "/atlases/NeuroMark_1.0_parcellation.nii.gz" }
-],
-"features": [
-  { "name": "connectivity", "type": "atlas_based_connectivity",
-    "setting": "default", "atlases": ["Schaefer200"], "min_region_coverage": 0.8 },
-  { "name": "neuromark",    "type": "atlas_based_connectivity",
-    "setting": "default", "atlases": ["NeuroMark1"],  "min_region_coverage": 0.5 }
-]
-```
-
-Any other integer-labeled NIfTI parcellation atlas also works; add it as a `ref` file with a unique `desc` tag and reference it in an `atlas_based_connectivity` feature.
-
----
-
-## Chaining with nfc-fedlamp
-
-Add `"fedlamp_export"` to `aggregation_types` to produce per-subject connectivity feature files that a downstream [nfc-fedlamp](../nfc-fedlamp/) computation can consume directly.
-
-```json
-"aggregation_types": ["qc_metadata", "fedlamp_export"],
-"fedlamp_config": {
-  "connectivity_data_file": "FedLAMP_connectivity_Data.csv",
-  "covariate_file": "FedLAMP_Covariate.csv"
-}
-```
-
-Nothing is sent across sites. Each site writes two files locally:
-
-| File | Contents |
+| File | Description |
 |---|---|
-| `FedLAMP_connectivity_Data.csv` | One row per subject. Columns are the upper triangle of each subject's correlation matrix for every atlas, named `{feature_key}_{i:03d}x{j:03d}` (i < j, 1-indexed). Multiple atlases are concatenated in sorted key order. |
-| `FedLAMP_Covariate.csv` | Per-subject demographics and QC, row-aligned with the data file. Same format as `Covariate.csv` — `subject_id`, all BIDS `participants.tsv` columns, and HALFpipe QC metrics (`mean_fd`, `mean_fd_perc`, `mean_gm_tsnr`). |
+| `data_Schaefer200.csv` | Per-subject functional connectivity rows. Each row is one subject's upper-triangle correlation values for the Schaefer 200-parcel atlas (19,900 columns: 200×199/2). Column names: `{feature_key}_{i:03d}x{j:03d}` (1-indexed, i < j). |
+| `data_Schaefer400.csv` | Same format for the Schaefer 400-parcel atlas (79,800 columns). |
+| `data_NeuroMark1.csv` | Same format for NeuroMark 1.0 53-IC atlas (1,378 columns). |
+| `data_Brainnetome246.csv` | Same format for Brainnetome 246-parcel atlas (30,135 columns). |
+| `labels.csv` | Per-subject metadata row-aligned with all data CSVs. Columns: `subject_id`, all BIDS `participants.tsv` demographics, then HALFpipe QC metrics (`mean_fd`, `mean_fd_perc`, `mean_gm_tsnr`). |
+| `global_results.json` | Federated QC summary from the server (subject counts, weighted motion statistics across sites). |
+| `index.html` | Interactive HTML QC report. Open in any browser. |
+| `halfpipe_reports/index.html` | HALFpipe's own per-subject QC report (preprocessing details, motion traces, registration figures). |
 
-`fedlamp_export` requires `atlas_based_connectivity` features in `halfpipe_spec` so that per-subject `*_correlation_matrix.tsv` files are produced. It can run independently of `atlas_connectivity` (the federated mean); either or both can appear in `aggregation_types`.
+---
 
-Set nfc-fedlamp's `parameters.json`:
+## Chaining with nfc-label-noise-filtering
+
+The `data_*.csv` + `labels.csv` output is the direct input for [nfc-label-noise-filtering](../nfc-label-noise-filtering/). Point nfc-label-noise-filtering's data directory at this computation's output directory for each site and set:
 
 ```json
 {
-  "data_file":      "FedLAMP_connectivity_Data.csv",
-  "covariate_file": "FedLAMP_Covariate.csv"
+  "DataFile": "data_Schaefer200.csv",
+  "LabelColumn": "diagnosis"
 }
 ```
 
-Point nfc-fedlamp's data directory at nfc-halfpipe's output directory for each site.
-
----
-
-## Chaining with nfc-combatdc
-
-Add `"subject_csv"` to `aggregation_types` to produce per-site input files for [nfc-combatdc](../nfc-combatdc/):
-
-```json
-"aggregation_types": ["qc_metadata", "roi_values", "subject_csv"],
-"subject_csv_config": {
-  "data_file": "Data.csv",
-  "covariate_file": "Covariate.csv"
-}
-```
-
-Each site's output directory will contain:
-
-| File | Contents |
-|---|---|
-| `Data.csv` | All-numeric matrix — one row per subject, one column per `{feature}_{parcel}`. No subject_id column. Direct input for nfc-combatdc's `data_file`. |
-| `Covariate.csv` | Per-subject demographics and QC, row-aligned with `Data.csv`. Populated automatically from the site's BIDS `participants.tsv` (all demographic columns) plus HALFpipe per-subject QC metrics (`mean_fd`, `mean_fd_perc`, `mean_gm_tsnr`). The site administrator selects which columns to declare in nfc-combatdc's `covariates_types`. |
-
-Then set nfc-combatdc's `parameters.json` to point at these files:
-
-```json
-{
-  "data_file": "Data.csv",
-  "covariate_file": "Covariate.csv",
-  "combat_algo": "combatMegaDC",
-  "covariates_types": {
-    "age": "float",
-    "gender": "str",
-    "psychosis": "bool"
-  }
-}
-```
-
-Point nfc-combatdc's data directory at nfc-halfpipe's output directory for each site so it reads the files nfc-halfpipe wrote. The `covariates_types` keys must match column names present in `Covariate.csv` — use whatever subset of the demographic columns is appropriate for the analysis.
+Adjust `DataFile` to the atlas you want to analyse. `LabelColumn` must match a column present in `labels.csv` (populated from `participants.tsv`).
 
 ---
 
@@ -445,29 +348,13 @@ Point nfc-combatdc's data directory at nfc-halfpipe's output directory for each 
 
 ```
 Phase 1  → RUN_HALFPIPE (all sites)
-             site: run halfpipe → extract QC
-             server: store QC per site
+             site: run HALFpipe → write per-atlas data_*.csv + labels.csv
+             site: send QC payload (n_subjects, mean_fd, mean_fd_perc) to server
+             server: collect QC from all sites → compute weighted means
 
-Phase 2a → SEND_ROI_VALUES (if "roi_values" or "subject_csv" in aggregation_types)
-             site [roi_values]:  extract parcel means → send to server
-             site [subject_csv]: write Data.csv + Covariate.csv locally (nothing sent)
-             server [roi_values]: store ROI values per site
-
-Phase 2b → SEND_ATLAS_CONNECTIVITY (if "atlas_connectivity" or "fedlamp_export" in aggregation_types)
-             site [fedlamp_export]:      write FedLAMP_connectivity_Data.csv + FedLAMP_Covariate.csv
-                                         locally (per-subject upper-triangle features; nothing sent)
-             site [atlas_connectivity]:  apply Fisher z-transform → compute site-mean Fisher-z matrix
-                                         send {atlas_key → mean_fisher_z_matrix, n_subjects} to server
-             server [atlas_connectivity]: weighted-average Fisher-z matrices across sites → tanh
-                                          back-transform → federated mean correlation matrix per atlas
-
-Phase 2c → SEND_SITE_STATS (if "voxelwise_maps" in aggregation_types)
-             site: run halfpipe group-level → compress NIfTI maps
-             server: store stat maps per site
-
-Phase 3  → (server aggregates all collected data)
+Phase 2  → (server aggregates QC)
            → ACCEPT_GLOBAL_RESULTS (all sites)
-             site: save global_results.json to output directory
+             site: save global_results.json + index.html to output directory
 ```
 
 ---
